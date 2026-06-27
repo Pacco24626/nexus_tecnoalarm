@@ -1,0 +1,11 @@
+send_key:
+  description: "Invia la pressione di un tasto alla tastiera remota"
+  fields:
+    code:
+      description: "Codice numerico del tasto (0-9, o 10-15 per tasti funzione)"
+      example: 1
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 15
