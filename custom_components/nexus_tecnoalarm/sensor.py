@@ -15,9 +15,6 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     
     sensor = NexusKeypadSensor(hass, host, port)
     async_add_entities([sensor])
-    
-    # Avviamo il loop del WebSocket in background
-    hass.loop.create_task(sensor.ws_loop())
 
 class NexusKeypadSensor(SensorEntity):
     """Rappresentazione del display e stato della tastiera."""
@@ -30,6 +27,7 @@ class NexusKeypadSensor(SensorEntity):
         self._attrs = {}
         self._attr_name = "Nexus Tecnoalarm Keypad"
         self._attr_unique_id = "nexus_tecnoalarm_kpad_01"
+        self._ws_task = None
 
     @property
     def state(self):
@@ -39,22 +37,46 @@ class NexusKeypadSensor(SensorEntity):
     def extra_state_attributes(self):
         return self._attrs
 
+    async def async_added_to_hass(self):
+        """Avvia la connessione quando l'entità viene aggiunta a Home Assistant."""
+        _LOGGER.info("Entità aggiunta a HA. Avvio task di ascolto WebSocket.")
+        # Utilizziamo il tracker dei task in background nativo di HA per una gestione pulita del ciclo di vita
+        self._ws_task = self.hass.async_create_background_task(
+            self.ws_loop(), "nexus_tecnoalarm_ws_loop"
+        )
+
+    async def async_will_remove_from_hass(self):
+        """Pulisce le risorse quando l'entità viene rimossa da Home Assistant."""
+        if self._ws_task:
+            _LOGGER.info("Rimozione entità. Cancellazione task WebSocket.")
+            self._ws_task.cancel()
+            self._ws_task = None
+        
+        # Pulisce il client websocket globale
+        if self.hass.data[DOMAIN].get("ws_client"):
+            self.hass.data[DOMAIN]["ws_client"] = None
+
     async def ws_loop(self):
-        """Loop di connessione e ascolto WebSocket."""
+        """Loop di connessione e ascolto WebSocket con riconnessione robusta."""
         session = async_get_clientsession(self.hass)
-        # Sostituire con wss:// se usi HTTPS sul gateway locale
-        url = f"ws://{self._host}:{self._port}/ws/tastiera"
+        
+        # Rileva automaticamente se usare ws o wss (porta 443 o porta HTTPS di default)
+        protocol = "wss" if int(self._port) == 443 else "ws"
+        url = f"{protocol}://{self._host}:{self._port}/ws/tastiera"
 
         while True:
             _LOGGER.info("Tentativo di connessione al gateway: %s", url)
             try:
-                async with session.ws_connect(url) as ws:
+                # Impostiamo un timeout di connessione per evitare che la chiamata rimanga bloccata all'infinito
+                # se il server Node-RED è offline o si sta riavviando.
+                timeout = aiohttp.ClientTimeout(connect=10.0, sock_read=60.0)
+                async with session.ws_connect(url, timeout=timeout) as ws:
                     # Salviamo il riferimento per permettere al servizio di inviare i tasti
                     self.hass.data[DOMAIN]["ws_client"] = ws
                     
                     # Handshake iniziale
                     await ws.send_json({"topic": "tastiera_polling", "payload": "start"})
-                    _LOGGER.info("Connessione stabilita. Handshake inviato.")
+                    _LOGGER.info("Connessione stabilita con successo. Handshake inviato.")
 
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
@@ -68,15 +90,25 @@ class NexusKeypadSensor(SensorEntity):
                                 self.async_write_ha_state()
                                 
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            _LOGGER.warning("WebSocket disconnesso dal server: %s", msg.type)
                             break
+            except asyncio.CancelledError:
+                # Il task è stato cancellato dall'esterno (es. unload della piattaforma), usciamo
+                _LOGGER.info("Il loop di ascolto WebSocket è stato cancellato.")
+                break
             except Exception as e:
                 _LOGGER.error("Errore di connessione WebSocket: %s", e)
             
-            # Gestione disconnessione
+            # Gestione stato disconnesso ed eliminazione vecchi dati congelati
             self._state = "Disconnesso"
             self._attrs = {}
             self.async_write_ha_state()
             self.hass.data[DOMAIN]["ws_client"] = None
             
             # Attendi 5 secondi prima di tentare il ripristino
-            await asyncio.sleep(5)
+            _LOGGER.info("Tentativo di riconnessione tra 5 secondi...")
+            try:
+                await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                break
+
