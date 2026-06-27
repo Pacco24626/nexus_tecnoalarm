@@ -3,6 +3,7 @@ import os
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.helpers.discovery import async_load_platform
 from .const import DOMAIN, SERVICE_SEND_KEY, ATTR_KEY_CODE
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,8 +45,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(DOMAIN, SERVICE_SEND_KEY, handle_send_key)
 
-    hass.async_create_task(
-        hass.helpers.discovery.async_load_platform("sensor", DOMAIN, {}, config)
-    )
+    # Carica la piattaforma sensore
+    await async_load_platform(hass, "sensor", DOMAIN, {}, config)
 
     return True
