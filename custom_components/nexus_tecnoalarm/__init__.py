@@ -18,10 +18,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     host = conf.get("host")
     port = conf.get("port", 80)
+    token = conf.get("token", "")
 
     hass.data[DOMAIN] = {
         "host": host,
         "port": port,
+        "token": token,
         "ws_client": None
     }
 

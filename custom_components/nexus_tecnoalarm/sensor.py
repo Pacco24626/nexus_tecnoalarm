@@ -23,6 +23,7 @@ class NexusKeypadSensor(SensorEntity):
         self.hass = hass
         self._host = host
         self._port = port
+        self._token = hass.data[DOMAIN].get("token", "")
         self._state = "Disconnesso"
         self._attrs = {}
         self._attr_name = "Nexus Tecnoalarm Keypad"
@@ -74,9 +75,11 @@ class NexusKeypadSensor(SensorEntity):
                     # Salviamo il riferimento per permettere al servizio di inviare i tasti
                     self.hass.data[DOMAIN]["ws_client"] = ws
                     
-                    # Handshake iniziale
+                    # Handshake iniziale e autenticazione
+                    if self._token:
+                        await ws.send_json({"topic": "tastiera_auth", "payload": self._token})
                     await ws.send_json({"topic": "tastiera_polling", "payload": "start"})
-                    _LOGGER.info("Connessione stabilita con successo. Handshake inviato.")
+                    _LOGGER.info("Connessione stabilita con successo. Handshake di autenticazione inviato.")
 
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
