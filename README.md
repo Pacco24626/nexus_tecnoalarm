@@ -26,12 +26,13 @@ Questa integrazione consente di visualizzare lo stato in tempo reale (display LC
 ---
 
 ### 2. Configurazione in `configuration.yaml`
-Aggiungi le seguenti righe al tuo file `configuration.yaml` per definire i parametri di connessione al tuo gateway Nexus-T:
+Aggiungi le seguenti righe al tuo file `configuration.yaml` per definire i parametri di connessione al tuo gateway Nexus-T, includendo il token di sicurezza autogenerato (visibile nella Dashboard di impostazioni del portale):
 
 ```yaml
 nexus_tecnoalarm:
   host: "100.64.120.126"  # Sostituisci con l'IP locale o Tailscale del gateway
   port: 1880              # La porta utilizzata dal gateway Node-RED
+  token: "IL_TUO_TOKEN_DI_SICUREZZA" # Inserisci il token visualizzato nella Dashboard
 ```
 
 Salva il file e **riavvia nuovamente Home Assistant**. Verrà creata l'entità sensore:
