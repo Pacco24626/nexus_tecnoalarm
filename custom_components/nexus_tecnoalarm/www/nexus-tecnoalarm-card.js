@@ -30,19 +30,19 @@ class NexusTecnoalarmCard extends HTMLElement {
     // Aggiorna LED Diagnostici (Stato e Classi Lampeggio)
     // RETE: verde se attiva, rosso lampeggiante se assente
     if (payload.rete) {
-      this._updateLed('led-rete', true, payload.attr_rete, 'green-on');
+      this._updateLed('led-rete', true, (payload.attr_rete || payload.rete_attr), 'green-on');
     } else {
       this._updateLed('led-rete', true, true, 'red-on', 'blink');
     }
     
     // GUASTO: giallo se presente
-    this._updateLed('led-guasto', !!payload.guasto, !!payload.attr_guasto, 'yellow-on');
+    this._updateLed('led-guasto', !!payload.guasto, !!(payload.attr_guasto || payload.guasto_attr), 'yellow-on');
 
     // TAMPER: rosso se presente
-    this._updateLed('led-tamper', !!payload.tamper, !!payload.attr_tamper, 'red-on');
+    this._updateLed('led-tamper', !!payload.tamper, !!(payload.attr_tamper || payload.tamper_attr), 'red-on');
 
     // BATTERIA: arancione se presente
-    this._updateLed('led-batt', !!payload.batteria, !!payload.attr_batt, 'orange-on');
+    this._updateLed('led-batt', !!payload.batteria, !!(payload.attr_batt || payload.batteria_attr), 'orange-on');
 
     // Aggiorna LED Programmi (P1 a P8)
     const progs = payload.programmi || [];
@@ -53,8 +53,8 @@ class NexusTecnoalarmCard extends HTMLElement {
       
       const armed = !!p.stato;
       const alarm = !!p.allarme;
-      const armedBlink = !!p.attr_stato;
-      const alarmBlink = !!p.attr_allarme;
+      const armedBlink = !!(p.attr_stato || p.stato_attr);
+      const alarmBlink = !!(p.attr_allarme || p.allarme_attr);
       
       // LED Stato Programma: giallo se inserito
       this._updateLed(statusLedId, armed, armedBlink, 'yellow-on');
