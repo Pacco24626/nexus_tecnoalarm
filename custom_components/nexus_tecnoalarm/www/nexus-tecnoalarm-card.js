@@ -35,14 +35,20 @@ class NexusTecnoalarmCard extends HTMLElement {
       this._updateLed('led-rete', true, true, 'red-on', 'blink');
     }
     
-    // GUASTO: giallo se presente
-    this._updateLed('led-guasto', !!payload.guasto, !!(payload.attr_guasto || payload.guasto_attr), 'yellow-on');
+    // GUASTO: giallo se presente / lampeggiante
+    const guastoActive = !!(payload.guasto || payload.attr_guasto || payload.guasto_attr);
+    const guastoBlink = !!(payload.attr_guasto || payload.guasto_attr);
+    this._updateLed('led-guasto', guastoActive, guastoBlink, 'yellow-on');
 
-    // TAMPER: rosso se presente
-    this._updateLed('led-tamper', !!payload.tamper, !!(payload.attr_tamper || payload.tamper_attr), 'red-on');
+    // TAMPER: rosso se presente / lampeggiante
+    const tamperActive = !!(payload.tamper || payload.attr_tamper || payload.tamper_attr);
+    const tamperBlink = !!(payload.attr_tamper || payload.tamper_attr);
+    this._updateLed('led-tamper', tamperActive, tamperBlink, 'red-on');
 
-    // BATTERIA: arancione se presente
-    this._updateLed('led-batt', !!payload.batteria, !!(payload.attr_batt || payload.batteria_attr), 'orange-on');
+    // BATTERIA: arancione se presente / lampeggiante
+    const battActive = !!(payload.batteria || payload.attr_batt || payload.batteria_attr);
+    const battBlink = !!(payload.attr_batt || payload.batteria_attr);
+    this._updateLed('led-batt', battActive, battBlink, 'orange-on');
 
     // Aggiorna LED Programmi (P1 a P8)
     const progs = payload.programmi || [];
@@ -51,16 +57,19 @@ class NexusTecnoalarmCard extends HTMLElement {
       const statusLedId = `prog-s${i+1}`;
       const alarmLedId = `prog-a${i+1}`;
       
-      const armed = !!p.stato;
-      const alarm = !!p.allarme;
+      const armedActive = !!(p.stato || p.attr_stato || p.stato_attr);
       const armedBlink = !!(p.attr_stato || p.stato_attr);
+      const armedBlinkClass = p.stato ? 'blink-slow' : 'blink';
+      
+      const alarmActive = !!(p.allarme || p.attr_allarme || p.allarme_attr);
       const alarmBlink = !!(p.attr_allarme || p.allarme_attr);
+      const alarmBlinkClass = p.allarme ? 'blink-slow' : 'blink';
       
-      // LED Stato Programma: giallo se inserito
-      this._updateLed(statusLedId, armed, armedBlink, 'yellow-on');
+      // LED Stato Programma: giallo se inserito / lampeggiante
+      this._updateLed(statusLedId, armedActive, armedBlink, 'yellow-on', armedBlinkClass);
       
-      // LED Allarme Programma: rosso se allarme
-      this._updateLed(alarmLedId, alarm, alarmBlink, 'red-on');
+      // LED Allarme Programma: rosso se allarme / lampeggiante
+      this._updateLed(alarmLedId, alarmActive, alarmBlink, 'red-on', alarmBlinkClass);
     }
   }
 
