@@ -71,7 +71,7 @@ class NexusKeypadSensor(SensorEntity):
                 # Impostiamo un timeout di connessione per evitare che la chiamata rimanga bloccata all'infinito
                 # se il server Node-RED è offline o si sta riavviando.
                 timeout = aiohttp.ClientTimeout(connect=10.0, sock_read=60.0)
-                async with session.ws_connect(url, timeout=timeout) as ws:
+                async with session.ws_connect(url, timeout=timeout, heartbeat=20.0) as ws:
                     # Salviamo il riferimento per permettere al servizio di inviare i tasti
                     self.hass.data[DOMAIN]["ws_client"] = ws
                     
