@@ -92,6 +92,13 @@ class NexusKeypadSensor(SensorEntity):
                                 self._attrs = payload
                                 self.async_write_ha_state()
                                 
+                            elif data.get("topic") == "tastiera_auth_status":
+                                payload = data.get("payload", {})
+                                if payload.get("status") == "error":
+                                    _LOGGER.error("Autenticazione WebSocket fallita: %s. Riconnessione...", payload.get("message"))
+                                    await ws.close()
+                                    break
+                                
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             _LOGGER.warning("WebSocket disconnesso dal server: %s", msg.type)
                             break
