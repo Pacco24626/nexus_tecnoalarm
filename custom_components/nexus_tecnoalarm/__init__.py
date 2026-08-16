@@ -4,7 +4,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers.discovery import async_load_platform
-from .const import DOMAIN, SERVICE_SEND_KEY, ATTR_KEY_CODE
+from .const import DOMAIN, SERVICE_SEND_KEY, ATTR_KEY_CODE, SERVICE_KEYPAD_PRESENCE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +24,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         "host": host,
         "port": port,
         "token": token,
-        "ws_client": None
+        "ws_client": None,
+        "last_presence": 0.0
     }
 
     # === Registra la cartella www interna per servire la card Lovelace ===
@@ -46,6 +47,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             _LOGGER.warning("WebSocket non connesso")
 
     hass.services.async_register(DOMAIN, SERVICE_SEND_KEY, handle_send_key)
+
+    async def handle_keypad_presence(call):
+        hass.data[DOMAIN]["last_presence"] = hass.loop.time()
+
+    hass.services.async_register(DOMAIN, SERVICE_KEYPAD_PRESENCE, handle_keypad_presence)
 
     # Carica la piattaforma sensore
     await async_load_platform(hass, "sensor", DOMAIN, {}, config)

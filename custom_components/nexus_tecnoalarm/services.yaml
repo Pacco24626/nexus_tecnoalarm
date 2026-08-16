@@ -9,3 +9,6 @@ send_key:
         number:
           min: 0
           max: 15
+
+keypad_presence:
+  description: "Segnale di presenza dalla card: tiene attivo il polling tastiera solo mentre la card è in vista. Chiamato automaticamente dalla card, non serve invocarlo a mano."

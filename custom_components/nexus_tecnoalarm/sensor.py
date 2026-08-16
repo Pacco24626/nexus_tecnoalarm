@@ -5,6 +5,7 @@ import aiohttp
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import DOMAIN
+from .presence import should_ping, PRESENCE_WINDOW_S
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,18 +82,21 @@ class NexusKeypadSensor(SensorEntity):
                     await ws.send_json({"topic": "tastiera_polling", "payload": "start"})
                     _LOGGER.info("Connessione stabilita con successo. Handshake di autenticazione inviato.")
 
-                    # Keep-alive APPLICATIVO. Il gateway mantiene attivo il polling della
-                    # tastiera solo se riceve un messaggio "tastiera_ping" entro una finestra
-                    # di 15s. L'heartbeat=20.0 qui sopra e' il ping/pong di PROTOCOLLO
-                    # WebSocket (tiene viva la sola TCP) e NON rinnova quel timer: senza
-                    # questo ping applicativo, dopo 15s il gateway rilascia la tastiera e il
-                    # sensore si congela pur restando la connessione aperta (nessuna
-                    # riconnessione), finche' un altro client non riavvia il polling.
+                    # Keep-alive APPLICATIVO gateato dalla presenza.
+                    # Il gateway mantiene attivo il polling della tastiera solo se riceve un
+                    # "tastiera_ping" entro una finestra di 15s. L'heartbeat=20.0 qui sopra 
+                    # e' il ping/pong di PROTOCOLLO WebSocket.
+                    # Inviamo il ping applicativo SOLO se una card e' in vista (should_ping).
+                    # Altrimenti non mandiamo nulla e il gateway rilascera' la tastiera.
+                    self.hass.data[DOMAIN]["last_presence"] = self.hass.loop.time()
                     async def _keepalive(sock):
                         try:
                             while True:
-                                await asyncio.sleep(10)
-                                await sock.send_json({"topic": "tastiera_ping", "payload": 1})
+                                await asyncio.sleep(5)
+                                now = self.hass.loop.time()
+                                last = self.hass.data[DOMAIN].get("last_presence", 0.0)
+                                if should_ping(now, last, PRESENCE_WINDOW_S):
+                                    await sock.send_json({"topic": "tastiera_ping", "payload": 1})
                         except (asyncio.CancelledError, ConnectionResetError, RuntimeError, aiohttp.ClientError):
                             return
                     ping_task = asyncio.ensure_future(_keepalive(ws))

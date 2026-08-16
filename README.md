@@ -1,7 +1,9 @@
 # Nexus Tecnoalarm Keypad 🛡️
 Integrazione personalizzata per Home Assistant che interfaccia una tastiera virtuale **Tecnoalarm** tramite il gateway **Nexus-T** (V0.7.1+).
 
-Questa integrazione consente di visualizzare lo stato in tempo reale (display LCD, LED diagnostici, stato degli 8 programmi) ed inviare i tasti premuti direttamente al gateway locale.
+Questa integrazione consente di visualizzare lo stato in tempo reale (display LCD, LED diagnostici, stato degli 8 programmi) ed inviare i tasti premuti direttamente al gateway locale. Il polling della tastiera sul gateway è ottimizzato per restare attivo **solo quando la card è in vista** sul pannello di Home Assistant.
+
+> **Nota importante (v1.1.0):** Se aggiorni l'integrazione da una versione precedente, è necessario svuotare la cache del browser / fare un hard-refresh per caricare la nuova card Lovelace. In caso contrario, il gateway rilascerà la tastiera dopo 15 secondi non ricevendo il nuovo battito di presenza.
 
 ---
 

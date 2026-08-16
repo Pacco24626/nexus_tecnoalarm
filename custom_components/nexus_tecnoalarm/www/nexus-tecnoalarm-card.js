@@ -1,4 +1,42 @@
 class NexusTecnoalarmCard extends HTMLElement {
+  connectedCallback() {
+    this._visHandler = () => {
+      if (document.visibilityState === 'visible') {
+        this._sendPresence();
+      }
+    };
+    document.addEventListener('visibilitychange', this._visHandler);
+    
+    // Manda subito se visibile
+    if (document.visibilityState === 'visible') {
+      this._sendPresence();
+    }
+    
+    // Timer periodico 5s
+    this._presenceTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        this._sendPresence();
+      }
+    }, 5000);
+  }
+
+  disconnectedCallback() {
+    if (this._presenceTimer) {
+      clearInterval(this._presenceTimer);
+      this._presenceTimer = null;
+    }
+    if (this._visHandler) {
+      document.removeEventListener('visibilitychange', this._visHandler);
+      this._visHandler = null;
+    }
+  }
+
+  _sendPresence() {
+    if (this._hass && document.visibilityState === 'visible') {
+      this._hass.callService('nexus_tecnoalarm', 'keypad_presence', {});
+    }
+  }
+
   set hass(hass) {
     this._hass = hass;
     const entityId = this.config.entity || 'sensor.nexus_tecnoalarm_keypad';
