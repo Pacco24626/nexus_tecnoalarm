@@ -81,27 +81,46 @@ class NexusKeypadSensor(SensorEntity):
                     await ws.send_json({"topic": "tastiera_polling", "payload": "start"})
                     _LOGGER.info("Connessione stabilita con successo. Handshake di autenticazione inviato.")
 
-                    async for msg in ws:
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            data = json.loads(msg.data)
-                            if data.get("topic") == "tastiera_update":
-                                payload = data.get("payload", {})
-                                
-                                # Aggiorna lo stato principale (Riga 1) e gli attributi
-                                self._state = payload.get("riga1", "").strip()
-                                self._attrs = payload
-                                self.async_write_ha_state()
-                                
-                            elif data.get("topic") == "tastiera_auth_status":
-                                payload = data.get("payload", {})
-                                if payload.get("status") == "error":
-                                    _LOGGER.error("Autenticazione WebSocket fallita: %s. Riconnessione...", payload.get("message"))
-                                    await ws.close()
-                                    break
-                                
-                        elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                            _LOGGER.warning("WebSocket disconnesso dal server: %s", msg.type)
-                            break
+                    # Keep-alive APPLICATIVO. Il gateway mantiene attivo il polling della
+                    # tastiera solo se riceve un messaggio "tastiera_ping" entro una finestra
+                    # di 15s. L'heartbeat=20.0 qui sopra e' il ping/pong di PROTOCOLLO
+                    # WebSocket (tiene viva la sola TCP) e NON rinnova quel timer: senza
+                    # questo ping applicativo, dopo 15s il gateway rilascia la tastiera e il
+                    # sensore si congela pur restando la connessione aperta (nessuna
+                    # riconnessione), finche' un altro client non riavvia il polling.
+                    async def _keepalive(sock):
+                        try:
+                            while True:
+                                await asyncio.sleep(10)
+                                await sock.send_json({"topic": "tastiera_ping", "payload": 1})
+                        except (asyncio.CancelledError, ConnectionResetError, RuntimeError, aiohttp.ClientError):
+                            return
+                    ping_task = asyncio.ensure_future(_keepalive(ws))
+
+                    try:
+                        async for msg in ws:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                data = json.loads(msg.data)
+                                if data.get("topic") == "tastiera_update":
+                                    payload = data.get("payload", {})
+
+                                    # Aggiorna lo stato principale (Riga 1) e gli attributi
+                                    self._state = payload.get("riga1", "").strip()
+                                    self._attrs = payload
+                                    self.async_write_ha_state()
+
+                                elif data.get("topic") == "tastiera_auth_status":
+                                    payload = data.get("payload", {})
+                                    if payload.get("status") == "error":
+                                        _LOGGER.error("Autenticazione WebSocket fallita: %s. Riconnessione...", payload.get("message"))
+                                        await ws.close()
+                                        break
+
+                            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                                _LOGGER.warning("WebSocket disconnesso dal server: %s", msg.type)
+                                break
+                    finally:
+                        ping_task.cancel()
             except asyncio.CancelledError:
                 # Il task è stato cancellato dall'esterno (es. unload della piattaforma), usciamo
                 _LOGGER.info("Il loop di ascolto WebSocket è stato cancellato.")
