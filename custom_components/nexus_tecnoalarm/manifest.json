@@ -3,10 +3,10 @@
   "name": "Nexus Tecnoalarm Keypad",
   "codeowners": [],
   "dependencies": [],
-  "documentation": "https://github.com/tuo-username/nexus_tecnoalarm",
+  "documentation": "https://github.com/Pacco24626/nexus_tecnoalarm",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/tuo-username/nexus_tecnoalarm/issues",
+  "issue_tracker": "https://github.com/Pacco24626/nexus_tecnoalarm/issues",
   "requirements": [],
   "version": "1.0.0"
 }
