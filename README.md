@@ -5,6 +5,8 @@ Questa integrazione consente di visualizzare lo stato in tempo reale (display LC
 
 > **Nota importante (v1.1.0):** Se aggiorni l'integrazione da una versione precedente, è necessario svuotare la cache del browser / fare un hard-refresh per caricare la nuova card Lovelace. In caso contrario, il gateway rilascerà la tastiera dopo 15 secondi non ricevendo il nuovo battito di presenza.
 
+> **Nota di migrazione (v1.2.0):** Da questa versione l'integrazione si connette al gateway via HTTPS/wss attraverso il proxy Caddy, ignorando il certificato auto-firmato locale (verify_ssl=False). Se avevi configurato la porta 1880, riconfigura in configuration.yaml con port: 443 (l'host resta l'IP/indirizzo Tailscale del gateway). Nota: il traffico è cifrato (TLS) ma il certificato interno non è verificato — accettabile su rete locale, protegge dallo sniffing passivo.
+
 ---
 
 ## ⚙️ Configurazione del Backend (Home Assistant)

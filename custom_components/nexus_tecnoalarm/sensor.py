@@ -60,7 +60,7 @@ class NexusKeypadSensor(SensorEntity):
 
     async def ws_loop(self):
         """Loop di connessione e ascolto WebSocket con riconnessione robusta."""
-        session = async_get_clientsession(self.hass)
+        session = async_get_clientsession(self.hass, verify_ssl=False)
         
         # Rileva automaticamente se usare ws o wss (porta 443 o porta HTTPS di default)
         protocol = "wss" if int(self._port) == 443 else "ws"
