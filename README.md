@@ -1,3 +1,5 @@
+<img src="icons/logo.png" alt="Nexus Tecnoalarm Keypad" width="360">
+
 # Nexus Tecnoalarm Keypad 🛡️
 Integrazione personalizzata per Home Assistant che interfaccia una tastiera virtuale **Tecnoalarm** tramite il gateway **Nexus-T** (V0.7.1+).
 
