@@ -59,8 +59,16 @@ Tre passaggi, una volta sola:
 2. **Rimuovi la risorsa Lovelace** `/nexus_tecnoalarm_local/nexus-tecnoalarm-card.js` da
    *Impostazioni → Plance → Risorse*. Ora la registra l'integrazione, con la versione
    attaccata all'URL: gli aggiornamenti non richiedono più di svuotare la cache né il
-   trucco del `?v=`. Se la lasci, la card viene caricata due volte.
+   trucco del `?v=`. Lasciandola, il file verrebbe caricato due volte — dalla 2.0.1 è
+   innocuo, perché la registrazione dell'elemento è idempotente, ma resta spreco.
+
 3. **Aggiungi l'integrazione** e inserisci host, porta e token.
+
+> [!WARNING]
+> **Se dopo l'aggiornamento l'interfaccia non si carica**, l'integrazione va rimossa dal
+> filesystem, perché senza interfaccia non ci arrivi da HACS: cancella la cartella
+> `custom_components/nexus_tecnoalarm` con File Editor, Samba o il terminale, e riavvia.
+> Il backend resta raggiungibile anche quando il frontend non parte.
 
 **Le card già in dashboard non vanno toccate.** L'entità mantiene lo stesso `unique_id`
 della versione YAML, quindi `sensor.nexus_tecnoalarm_keypad`, la sua cronologia e ogni

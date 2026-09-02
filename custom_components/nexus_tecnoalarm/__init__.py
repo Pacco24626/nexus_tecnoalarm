@@ -97,13 +97,20 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         return
 
     www_dir = os.path.join(os.path.dirname(__file__), "www")
-    if not os.path.isdir(www_dir):
+    # L'accesso al filesystem va fuori dall'event loop: Home Assistant segnala
+    # le blocking call, e su alcune versioni le tratta come errore.
+    if not await hass.async_add_executor_job(os.path.isdir, www_dir):
         _LOGGER.warning("Cartella www assente: la card non verra' servita")
         return
 
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL_BASE, www_dir, False)]
-    )
+    try:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARD_URL_BASE, www_dir, False)]
+        )
+    except RuntimeError as err:
+        # Percorso gia' registrato da un avvio precedente: non e' un motivo
+        # per far fallire la configurazione dell'integrazione.
+        _LOGGER.debug("Percorso statico gia' registrato: %s", err)
 
     integration = await async_get_integration(hass, DOMAIN)
     add_extra_js_url(hass, f"{CARD_URL_BASE}/{CARD_FILENAME}?v={integration.version}")

@@ -445,4 +445,30 @@ class NexusTecnoalarmCard extends HTMLElement {
   }
 }
 
-customElements.define('nexus-tecnoalarm-card', NexusTecnoalarmCard);
+// Registrazione idempotente e non fatale.
+//
+// Dalla 2.0.0 questo file viene caricato dall'integrazione su OGNI pagina del
+// frontend, non solo sulla plancia. Due conseguenze da cui difendersi:
+//
+// 1. se resta anche la vecchia risorsa Lovelace, il file viene caricato due
+//    volte e la seconda define() lancerebbe un'eccezione;
+// 2. un'eccezione non gestita qui dentro non rompe una scheda, rompe il
+//    caricamento dell'intera interfaccia.
+//
+// Quindi si controlla prima se l'elemento esiste gia', e comunque non si
+// lascia sfuggire nulla.
+try {
+  if (!customElements.get('nexus-tecnoalarm-card')) {
+    customElements.define('nexus-tecnoalarm-card', NexusTecnoalarmCard);
+
+    window.customCards = window.customCards || [];
+    window.customCards.push({
+      type: 'nexus-tecnoalarm-card',
+      name: 'Nexus Tecnoalarm Keypad',
+      description: 'Tastiera virtuale Tecnoalarm: display, LED e programmi.',
+      documentationURL: 'https://github.com/Pacco24626/nexus_tecnoalarm',
+    });
+  }
+} catch (err) {
+  console.error('nexus-tecnoalarm-card: registrazione fallita', err);
+}
