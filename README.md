@@ -1,92 +1,114 @@
 <img src="icons/logo.png" alt="Nexus Tecnoalarm Keypad" width="360">
 
-# Nexus Tecnoalarm Keypad 🛡️
-Integrazione personalizzata per Home Assistant che interfaccia una tastiera virtuale **Tecnoalarm** tramite il gateway **Nexus-T** (V0.7.1+).
+# Nexus Tecnoalarm Keypad
 
-Questa integrazione consente di visualizzare lo stato in tempo reale (display LCD, LED diagnostici, stato degli 8 programmi) ed inviare i tasti premuti direttamente al gateway locale. Il polling della tastiera sul gateway è ottimizzato per restare attivo **solo quando la card è in vista** sul pannello di Home Assistant.
+Tastiera virtuale **Tecnoalarm** in Home Assistant, attraverso il gateway **Nexus-T**.
 
-> **Nota importante (v1.1.0):** Se aggiorni l'integrazione da una versione precedente, è necessario svuotare la cache del browser / fare un hard-refresh per caricare la nuova card Lovelace. In caso contrario, il gateway rilascerà la tastiera dopo 15 secondi non ricevendo il nuovo battito di presenza.
+Mostra in tempo reale il display LCD, i LED diagnostici e lo stato degli 8 programmi, e
+invia i tasti premuti al gateway locale. Il polling della tastiera resta attivo **solo
+quando la card è in vista**, così la centrale non viene interrogata a vuoto.
 
-> **Nota di migrazione (v1.2.0):** Da questa versione l'integrazione si connette al gateway via HTTPS/wss attraverso il proxy Caddy, ignorando il certificato auto-firmato locale (verify_ssl=False). Se avevi configurato la porta 1880, riconfigura in configuration.yaml con port: 443 (l'host resta l'IP/indirizzo Tailscale del gateway). Nota: il traffico è cifrato (TLS) ma il certificato interno non è verificato — accettabile su rete locale, protegge dallo sniffing passivo.
+Dalla **2.0.0** si configura interamente dall'interfaccia e la card è inclusa: niente
+`configuration.yaml`, niente risorse Lovelace da registrare a mano.
 
----
+## Installazione
 
-## ⚙️ Configurazione del Backend (Home Assistant)
+1. HACS → menu ⋮ → **Repository personalizzate**
+2. URL `https://github.com/Pacco24626/nexus_tecnoalarm`, categoria **Integration**
+3. Installa, poi **riavvia Home Assistant**
+4. **Impostazioni → Dispositivi e servizi → Aggiungi integrazione → Nexus Tecnoalarm Keypad**
 
-### 1. Installazione
+Una sola installazione: la card viene servita e registrata dall'integrazione stessa.
 
-#### Opzione A: Installazione rapida tramite HACS (Consigliata)
-1. Apri **HACS** in Home Assistant.
-2. Vai su **Integrazioni** (Integrations).
-3. Clicca sui **tre puntini in alto a destra** e seleziona **Repository personalizzati** (Custom repositories).
-4. Nel campo **Repository**, inserisci:
-   `https://github.com/Pacco24626/nexus_tecnoalarm`
-5. Nel menu a tendina **Categoria**, seleziona **Integrazione** (Integration) e clicca su **Aggiungi**.
-6. Clicca sulla scheda **Nexus Tecnoalarm Keypad** appena apparsa e seleziona **Scarica** (Download).
-7. Riavvia Home Assistant per caricare il componente.
+Requisiti: Home Assistant 2024.12 o superiore, gateway Nexus-T V0.7.1 o superiore.
 
-#### Opzione B: Installazione Manuale
-1. Scarica e copia la cartella `custom_components/nexus_tecnoalarm` all'interno della cartella `/config/custom_components/` del tuo Home Assistant.
-2. Riavvia Home Assistant.
+## Configurazione
 
----
+| Campo | Default | Note |
+|---|---|---|
+| Nome | `Tecnoalarm` | nome del dispositivo |
+| Host | — | IP locale o indirizzo Tailscale del gateway |
+| Porta | `443` | |
+| Token di sicurezza | — | campo password, dalla dashboard impostazioni del portale |
+| Usa TLS (wss) | sì | tenere attivo con il proxy Caddy, **su qualunque porta** |
+| Verifica il certificato | no | lasciare spento con il certificato auto-firmato interno |
 
-### 2. Configurazione in `configuration.yaml`
-Aggiungi le seguenti righe al tuo file `configuration.yaml` per definire i parametri di connessione al tuo gateway Nexus-T, includendo il token di sicurezza autogenerato (visibile nella Dashboard di impostazioni del portale):
+**La connessione viene provata prima di salvare.** Il gateway risponde all'autenticazione
+con un esito esplicito, quindi i tre casi sono distinti: host irraggiungibile, token
+rifiutato, tutto a posto. Non si scopre più l'errore nel log dopo un riavvio.
 
-```yaml
-nexus_tecnoalarm:
-  host: "100.64.120.126"  # Sostituisci con l'IP locale o Tailscale del gateway
-  port: 1880              # La porta utilizzata dal gateway Node-RED
-  token: "IL_TUO_TOKEN_DI_SICUREZZA" # Inserisci il token visualizzato nella Dashboard
-```
+Da **Configura** si regolano anche i parametri di comportamento:
 
-Salva il file e **riavvia nuovamente Home Assistant**. Verrà creata l'entità sensore:
-* `sensor.nexus_tecnoalarm_keypad`
+| Campo | Default | Note |
+|---|---|---|
+| Aggancia solo con la card in vista | sì | spento, la tastiera resta sempre agganciata |
+| Finestra di presenza della card | 15 s | |
+| Intervallo del ping applicativo | 5 s | **massimo 10 s**, vedi sotto |
+| Attesa massima fra riconnessioni | 60 s | i tentativi partono da 5 s e raddoppiano |
 
----
+Il tetto di 10 secondi sul ping non è arbitrario: il gateway rilascia la tastiera se non
+riceve un ping entro 15 secondi (valore cablato nel nodo *Cervello AES* del flow). Oltre i
+10 il display morirebbe a intermittenza.
 
-## 🎨 Configurazione del Frontend (Lovelace Card)
+## Aggiornare dalla 1.x
 
-L'integrazione è configurata per servire automaticamente il file JavaScript della card Lovelace. Non è necessario copiare manualmente alcun file nella cartella `www`.
+Tre passaggi, una volta sola:
 
-### 1. Aggiungere la risorsa Lovelace
-1. Su Home Assistant, vai in **Impostazioni** -> **Plance** (Dashboards).
-2. In alto a destra, clicca sui **tre puntini** e seleziona **Risorse** (Resources).
-3. Clicca su **Aggiungi Risorsa** in basso a destra.
-4. Compila i campi nel seguente modo:
-   * **URL:** `/nexus_tecnoalarm_local/nexus-tecnoalarm-card.js`
-   * **Tipo di risorsa:** `Modulo JavaScript`
-5. Clicca su **Crea**.
+1. **Togli il blocco `nexus_tecnoalarm:` da `configuration.yaml`.** Non serve più, e
+   lasciandolo Home Assistant segnala un errore di configurazione all'avvio.
+2. **Rimuovi la risorsa Lovelace** `/nexus_tecnoalarm_local/nexus-tecnoalarm-card.js` da
+   *Impostazioni → Plance → Risorse*. Ora la registra l'integrazione, con la versione
+   attaccata all'URL: gli aggiornamenti non richiedono più di svuotare la cache né il
+   trucco del `?v=`. Se la lasci, la card viene caricata due volte.
+3. **Aggiungi l'integrazione** e inserisci host, porta e token.
 
-> [!NOTE]  
-> In caso di successivi aggiornamenti grafici del file JS, puoi forzare la pulizia della cache del browser modificando l'URL della risorsa in: `/nexus_tecnoalarm_local/nexus-tecnoalarm-card.js?v=1.0.1`
+**Le card già in dashboard non vanno toccate.** L'entità mantiene lo stesso `unique_id`
+della versione YAML, quindi `sensor.nexus_tecnoalarm_keypad`, la sua cronologia e ogni
+`type: custom:nexus-tecnoalarm-card` esistente continuano a funzionare.
 
-### 2. Aggiungere la Card alla Plancia
-1. Vai sulla tua Plancia principale, clicca sui tre puntini in alto a destra e seleziona **Modifica Plancia**.
-2. Clicca su **Aggiungi scheda**, seleziona **Manuale** (in fondo all'elenco).
-3. Incolla il seguente codice di configurazione YAML:
+## Entità
+
+| Entità | Descrizione |
+|---|---|
+| `sensor.nexus_tecnoalarm_keypad` | Riga 1 del display come stato, tutto il payload negli attributi |
+| `binary_sensor.<nome>_connessione_tastiera` | Stato del WebSocket verso il gateway |
+
+Il sensore del display ora diventa **non disponibile** quando il gateway non risponde,
+invece di riportare la stringa `Disconnesso`. È ciò che permette a un'automazione di
+distinguere "gateway giù" da "la centrale sta scrivendo qualcosa". La card lo gestisce
+mostrando `TASTIERA NON CONNESSA` sull'LCD.
+
+I suoi attributi sono esclusi dal recorder: cambiano a ogni polling e non hanno valore
+storico, quindi non gonfiano più il database.
+
+## Card
+
+Si aggiunge dal selettore schede, oppure a mano:
 
 ```yaml
 type: custom:nexus-tecnoalarm-card
 entity: sensor.nexus_tecnoalarm_keypad
 ```
-4. Clicca su **Salva**.
 
----
+## Servizi
 
-## 🎛️ Mappatura Tasti e Servizi
+`nexus_tecnoalarm.send_key` — invia un tasto. Campo `code`, 0-9 per le cifre e 10-15 per i
+tasti funzione. Con più gateway configurati si aggiunge `entry_id`.
 
-L'integrazione registra un servizio chiamato `nexus_tecnoalarm.send_key` per inviare la pressione dei tasti. I codici numerici dei tasti sono:
+`nexus_tecnoalarm.keypad_presence` — battito di presenza, chiamato dalla card. Non serve
+invocarlo a mano.
 
-| Tasto | Codice | Categoria |
-| :--- | :---: | :---: |
-| **0 - 9** | `0 - 9` | Tasti Numerici |
-| **MEM** | `10` | Funzione (Azzurro) |
-| **EXIT** | `11` | Funzione (Rosso) |
-| **▼** | `12` | Freccia Giù (Giallo) |
-| **▲** | `13` | Freccia Su (Giallo) |
-| *** NO** | `14` | Cancella (Arancione) |
-| **# YES** | `15` | Conferma (Verde) |
+## Cosa cambia nella 2.0.0
 
-Puoi richiamare il servizio manualmente dagli **Strumenti per sviluppatori** -> **Servizi** selezionando `nexus_tecnoalarm.send_key` e passando il codice desiderato.
+- Configurazione da interfaccia, con test della connessione; YAML rimosso
+- Card inclusa e registrata dall'integrazione, con cache-busting per versione
+- Riconnessione con backoff esponenziale ed errore loggato una volta per episodio, non a
+  ogni tentativo
+- Disponibilità reale dell'entità, e nuovo binary sensor di connessione
+- Attributi fuori dal recorder, stato riscritto solo quando cambia davvero
+- Dispositivo in HA, con host e link al gateway
+- Alla chiusura di Home Assistant la tastiera viene rilasciata subito invece di aspettare
+  la scadenza della finestra di presenza
+- TLS e verifica del certificato espliciti, non più dedotti dal numero di porta
+
+Il **flow del gateway non richiede alcuna modifica**: il protocollo sul filo è invariato.

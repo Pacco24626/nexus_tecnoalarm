@@ -1,147 +1,57 @@
-import asyncio
-import json
-import logging
-import aiohttp
+"""Sensore del display della tastiera.
+
+Lo stato e' la riga 1 del display; il resto del payload del gateway finisce
+negli attributi, che sono cio' che la card legge per disegnare LED e programmi.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from .const import DOMAIN
-from .presence import should_ping, PRESENCE_WINDOW_S
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MATCH_ALL
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN, LEGACY_SENSOR_NAME, LEGACY_SENSOR_UNIQUE_ID
+from .entity import KeypadEntity
+from .gateway import KeypadGateway
 
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Inizializza il sensore della tastiera."""
-    host = hass.data[DOMAIN]["host"]
-    port = hass.data[DOMAIN]["port"]
-    
-    sensor = NexusKeypadSensor(hass, host, port)
-    async_add_entities([sensor])
 
-class NexusKeypadSensor(SensorEntity):
-    """Rappresentazione del display e stato della tastiera."""
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    gateway: KeypadGateway = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([KeypadDisplaySensor(gateway)])
 
-    def __init__(self, hass, host, port):
-        self.hass = hass
-        self._host = host
-        self._port = port
-        self._token = hass.data[DOMAIN].get("token", "")
-        self._state = "Disconnesso"
-        self._attrs = {}
-        self._attr_name = "Nexus Tecnoalarm Keypad"
-        self._attr_unique_id = "nexus_tecnoalarm_kpad_01"
-        self._ws_task = None
+
+class KeypadDisplaySensor(KeypadEntity, SensorEntity):
+    """Display LCD e diagnostica della tastiera."""
+
+    # Il payload cambia a ogni polling e non ha alcun valore storico: senza
+    # questo, con la tastiera in vista si scriverebbe nel database in
+    # continuazione. Lo stato resta registrato, gli attributi no.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
+
+    _attr_icon = "mdi:security"
+    # Nome e unique_id sono quelli della versione YAML: cosi' il registro
+    # riconosce la stessa entita' e sia entity_id sia cronologia sopravvivono
+    # all'aggiornamento, lasciando intatte le card gia' in dashboard.
+    _attr_name = LEGACY_SENSOR_NAME
+    _attr_has_entity_name = False
+
+    def __init__(self, gateway: KeypadGateway) -> None:
+        super().__init__(gateway, LEGACY_SENSOR_UNIQUE_ID)
 
     @property
-    def state(self):
-        return self._state
+    def available(self) -> bool:
+        return self.gateway.connected
 
     @property
-    def extra_state_attributes(self):
-        return self._attrs
+    def native_value(self) -> str | None:
+        return self.gateway.display
 
-    async def async_added_to_hass(self):
-        """Avvia la connessione quando l'entità viene aggiunta a Home Assistant."""
-        _LOGGER.info("Entità aggiunta a HA. Avvio task di ascolto WebSocket.")
-        # Utilizziamo il tracker dei task in background nativo di HA per una gestione pulita del ciclo di vita
-        self._ws_task = self.hass.async_create_background_task(
-            self.ws_loop(), "nexus_tecnoalarm_ws_loop"
-        )
-
-    async def async_will_remove_from_hass(self):
-        """Pulisce le risorse quando l'entità viene rimossa da Home Assistant."""
-        if self._ws_task:
-            _LOGGER.info("Rimozione entità. Cancellazione task WebSocket.")
-            self._ws_task.cancel()
-            self._ws_task = None
-        
-        # Pulisce il client websocket globale
-        if self.hass.data[DOMAIN].get("ws_client"):
-            self.hass.data[DOMAIN]["ws_client"] = None
-
-    async def ws_loop(self):
-        """Loop di connessione e ascolto WebSocket con riconnessione robusta."""
-        session = async_get_clientsession(self.hass, verify_ssl=False)
-        
-        # Rileva automaticamente se usare ws o wss (porta 443 o porta HTTPS di default)
-        protocol = "wss" if int(self._port) == 443 else "ws"
-        url = f"{protocol}://{self._host}:{self._port}/ws/tastiera"
-
-        while True:
-            _LOGGER.info("Tentativo di connessione al gateway: %s", url)
-            try:
-                # Impostiamo un timeout di connessione per evitare che la chiamata rimanga bloccata all'infinito
-                # se il server Node-RED è offline o si sta riavviando.
-                timeout = aiohttp.ClientTimeout(connect=10.0, sock_read=60.0)
-                async with session.ws_connect(url, timeout=timeout, heartbeat=20.0) as ws:
-                    # Salviamo il riferimento per permettere al servizio di inviare i tasti
-                    self.hass.data[DOMAIN]["ws_client"] = ws
-                    
-                    # Handshake iniziale e autenticazione
-                    if self._token:
-                        await ws.send_json({"topic": "tastiera_auth", "payload": self._token})
-                    await ws.send_json({"topic": "tastiera_polling", "payload": "start"})
-                    _LOGGER.info("Connessione stabilita con successo. Handshake di autenticazione inviato.")
-
-                    # Keep-alive APPLICATIVO gateato dalla presenza.
-                    # Il gateway mantiene attivo il polling della tastiera solo se riceve un
-                    # "tastiera_ping" entro una finestra di 15s. L'heartbeat=20.0 qui sopra 
-                    # e' il ping/pong di PROTOCOLLO WebSocket.
-                    # Inviamo il ping applicativo SOLO se una card e' in vista (should_ping).
-                    # Altrimenti non mandiamo nulla e il gateway rilascera' la tastiera.
-                    self.hass.data[DOMAIN]["last_presence"] = self.hass.loop.time()
-                    async def _keepalive(sock):
-                        try:
-                            while True:
-                                await asyncio.sleep(5)
-                                now = self.hass.loop.time()
-                                last = self.hass.data[DOMAIN].get("last_presence", 0.0)
-                                if should_ping(now, last, PRESENCE_WINDOW_S):
-                                    await sock.send_json({"topic": "tastiera_ping", "payload": 1})
-                        except (asyncio.CancelledError, ConnectionResetError, RuntimeError, aiohttp.ClientError):
-                            return
-                    ping_task = asyncio.ensure_future(_keepalive(ws))
-
-                    try:
-                        async for msg in ws:
-                            if msg.type == aiohttp.WSMsgType.TEXT:
-                                data = json.loads(msg.data)
-                                if data.get("topic") == "tastiera_update":
-                                    payload = data.get("payload", {})
-
-                                    # Aggiorna lo stato principale (Riga 1) e gli attributi
-                                    self._state = payload.get("riga1", "").strip()
-                                    self._attrs = payload
-                                    self.async_write_ha_state()
-
-                                elif data.get("topic") == "tastiera_auth_status":
-                                    payload = data.get("payload", {})
-                                    if payload.get("status") == "error":
-                                        _LOGGER.error("Autenticazione WebSocket fallita: %s. Riconnessione...", payload.get("message"))
-                                        await ws.close()
-                                        break
-
-                            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                                _LOGGER.warning("WebSocket disconnesso dal server: %s", msg.type)
-                                break
-                    finally:
-                        ping_task.cancel()
-            except asyncio.CancelledError:
-                # Il task è stato cancellato dall'esterno (es. unload della piattaforma), usciamo
-                _LOGGER.info("Il loop di ascolto WebSocket è stato cancellato.")
-                break
-            except Exception as e:
-                _LOGGER.error("Errore di connessione WebSocket: %s", e)
-            
-            # Gestione stato disconnesso ed eliminazione vecchi dati congelati
-            self._state = "Disconnesso"
-            self._attrs = {}
-            self.async_write_ha_state()
-            self.hass.data[DOMAIN]["ws_client"] = None
-            
-            # Attendi 5 secondi prima di tentare il ripristino
-            _LOGGER.info("Tentativo di riconnessione tra 5 secondi...")
-            try:
-                await asyncio.sleep(5)
-            except asyncio.CancelledError:
-                break
-
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.gateway.attributes

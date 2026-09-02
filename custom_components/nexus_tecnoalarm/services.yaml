@@ -1,14 +1,37 @@
 send_key:
-  description: "Invia la pressione di un tasto alla tastiera remota"
+  name: Invia tasto
+  description: "Invia la pressione di un tasto alla tastiera remota."
   fields:
     code:
-      description: "Codice numerico del tasto (0-9, o 10-15 per tasti funzione)"
+      name: Codice tasto
+      description: "Codice numerico del tasto (0-9, o 10-15 per i tasti funzione)."
       example: 1
       required: true
       selector:
         number:
           min: 0
           max: 15
+          mode: box
+    entry_id:
+      name: Gateway
+      description: >-
+        Necessario solo con piu' di un gateway configurato: identificativo
+        della voce di integrazione a cui inviare il tasto.
+      required: false
+      example: "01J8ZQ4X5N6P7R8S9T0V1W2X3Y"
+      selector:
+        text:
 
 keypad_presence:
-  description: "Segnale di presenza dalla card: tiene attivo il polling tastiera solo mentre la card è in vista. Chiamato automaticamente dalla card, non serve invocarlo a mano."
+  name: Presenza tastiera
+  description: >-
+    Segnale di presenza dalla card: tiene attivo il polling della tastiera solo
+    mentre la card e' in vista. Viene chiamato automaticamente dalla card, non
+    serve invocarlo a mano.
+  fields:
+    entry_id:
+      name: Gateway
+      description: "Se omesso, il segnale vale per tutti i gateway configurati."
+      required: false
+      selector:
+        text:

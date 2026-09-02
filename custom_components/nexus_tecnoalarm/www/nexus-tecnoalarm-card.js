@@ -53,6 +53,19 @@ class NexusTecnoalarmCard extends HTMLElement {
       this.buildCard();
     }
 
+    // Dalla 2.0.0 il sensore diventa davvero "non disponibile" quando il
+    // gateway non risponde, invece di riportare la stringa "Disconnesso".
+    // Senza questo controllo il display stamperebbe "unavailable".
+    if (stateObj.state === "unavailable" || stateObj.state === "unknown") {
+      if (this.querySelector('#lcd-row1')) {
+        this.querySelector('#lcd-row1').textContent = "TASTIERA".padEnd(16, ' ');
+      }
+      if (this.querySelector('#lcd-row2')) {
+        this.querySelector('#lcd-row2').textContent = "NON CONNESSA".padEnd(16, ' ');
+      }
+      return;
+    }
+
     const payload = stateObj.attributes;
     const riga1 = stateObj.state || "";
     const riga2 = payload.riga2 || "";

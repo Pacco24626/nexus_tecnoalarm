@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nexus-T gateway",
+        "description": "Gateway address and security token, found in the portal settings dashboard. The connection is tested before saving.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "token": "Security token",
+          "use_tls": "Use TLS (wss)",
+          "verify_ssl": "Verify certificate"
+        },
+        "data_description": {
+          "host": "Local IP or Tailscale address of the gateway.",
+          "use_tls": "Keep this on with the Caddy proxy, on any port.",
+          "verify_ssl": "Leave off with the internal self-signed certificate: traffic stays encrypted, but the certificate is not verified."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Gateway unreachable: check host, port and that the proxy is running.",
+      "invalid_auth": "Token rejected by the gateway."
+    },
+    "abort": {
+      "already_configured": "This gateway is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Keypad configuration",
+        "menu_options": {
+          "gateway": "Connection",
+          "comportamento": "Behaviour"
+        }
+      },
+      "gateway": {
+        "title": "Connection",
+        "description": "The connection is tested again before saving.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "Security token",
+          "use_tls": "Use TLS (wss)",
+          "verify_ssl": "Verify certificate"
+        }
+      },
+      "comportamento": {
+        "title": "Behaviour",
+        "description": "The gateway releases the keypad if it gets no ping within {finestra_gateway} seconds, which is why the ping interval cannot exceed 10 seconds.",
+        "data": {
+          "on_demand": "Hold the keypad only while the card is in view",
+          "presence_window": "Card presence window",
+          "ping_interval": "Application ping interval",
+          "max_backoff": "Maximum wait between reconnection attempts"
+        },
+        "data_description": {
+          "on_demand": "When off, the keypad stays attached to the gateway at all times.",
+          "presence_window": "How long after the card's last heartbeat the keypad stays attached.",
+          "max_backoff": "Attempts start at 5 seconds and double up to this value."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Gateway unreachable: check host, port and that the proxy is running.",
+      "invalid_auth": "Token rejected by the gateway."
+    }
+  },
+  "services": {
+    "send_key": {
+      "name": "Send key",
+      "description": "Sends a key press to the remote keypad.",
+      "fields": {
+        "code": {
+          "name": "Key code",
+          "description": "Numeric key code (0-9, or 10-15 for function keys)."
+        },
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Only needed when more than one gateway is configured."
+        }
+      }
+    },
+    "keypad_presence": {
+      "name": "Keypad presence",
+      "description": "Presence heartbeat from the card. Called automatically, no need to invoke it by hand.",
+      "fields": {
+        "entry_id": {
+          "name": "Gateway",
+          "description": "If omitted, applies to every configured gateway."
+        }
+      }
+    }
+  }
+}

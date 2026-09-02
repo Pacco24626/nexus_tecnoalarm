@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Gateway Nexus-T",
+        "description": "Indirizzo del gateway e token di sicurezza, che trovi nella dashboard delle impostazioni del portale. La connessione viene provata prima di salvare.",
+        "data": {
+          "name": "Nome",
+          "host": "Host",
+          "port": "Porta",
+          "token": "Token di sicurezza",
+          "use_tls": "Usa TLS (wss)",
+          "verify_ssl": "Verifica il certificato"
+        },
+        "data_description": {
+          "host": "IP locale o indirizzo Tailscale del gateway.",
+          "use_tls": "Da tenere attivo con il proxy Caddy, su qualunque porta.",
+          "verify_ssl": "Da lasciare spento con il certificato auto-firmato interno: il traffico resta cifrato, ma il certificato non viene verificato."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Gateway irraggiungibile: verifica host, porta e che il proxy sia attivo.",
+      "invalid_auth": "Token rifiutato dal gateway."
+    },
+    "abort": {
+      "already_configured": "Questo gateway e' gia' configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configurazione tastiera",
+        "menu_options": {
+          "gateway": "Connessione",
+          "comportamento": "Comportamento"
+        }
+      },
+      "gateway": {
+        "title": "Connessione",
+        "description": "La connessione viene riprovata prima di salvare.",
+        "data": {
+          "host": "Host",
+          "port": "Porta",
+          "token": "Token di sicurezza",
+          "use_tls": "Usa TLS (wss)",
+          "verify_ssl": "Verifica il certificato"
+        }
+      },
+      "comportamento": {
+        "title": "Comportamento",
+        "description": "Il gateway rilascia la tastiera se non riceve un ping entro {finestra_gateway} secondi: per questo l'intervallo di ping non puo' superare i 10 secondi.",
+        "data": {
+          "on_demand": "Aggancia la tastiera solo quando la card e' in vista",
+          "presence_window": "Finestra di presenza della card",
+          "ping_interval": "Intervallo del ping applicativo",
+          "max_backoff": "Attesa massima fra i tentativi di riconnessione"
+        },
+        "data_description": {
+          "on_demand": "Spento, la tastiera resta sempre agganciata al gateway.",
+          "presence_window": "Per quanto tempo dopo l'ultimo battito della card la tastiera resta agganciata.",
+          "max_backoff": "I tentativi partono da 5 secondi e raddoppiano fino a questo valore."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Gateway irraggiungibile: verifica host, porta e che il proxy sia attivo.",
+      "invalid_auth": "Token rifiutato dal gateway."
+    }
+  },
+  "services": {
+    "send_key": {
+      "name": "Invia tasto",
+      "description": "Invia la pressione di un tasto alla tastiera remota.",
+      "fields": {
+        "code": {
+          "name": "Codice tasto",
+          "description": "Codice numerico del tasto (0-9, o 10-15 per i tasti funzione)."
+        },
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Necessario solo con piu' di un gateway configurato."
+        }
+      }
+    },
+    "keypad_presence": {
+      "name": "Presenza tastiera",
+      "description": "Segnale di presenza dalla card. Viene chiamato automaticamente, non serve invocarlo a mano.",
+      "fields": {
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Se omesso, vale per tutti i gateway configurati."
+        }
+      }
+    }
+  }
+}
