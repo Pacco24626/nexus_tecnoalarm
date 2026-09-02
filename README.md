@@ -56,11 +56,9 @@ Tre passaggi, una volta sola:
 
 1. **Togli il blocco `nexus_tecnoalarm:` da `configuration.yaml`.** Non serve più, e
    lasciandolo Home Assistant segnala un errore di configurazione all'avvio.
-2. **Rimuovi la risorsa Lovelace** `/nexus_tecnoalarm_local/nexus-tecnoalarm-card.js` da
-   *Impostazioni → Plance → Risorse*. Ora la registra l'integrazione, con la versione
-   attaccata all'URL: gli aggiornamenti non richiedono più di svuotare la cache né il
-   trucco del `?v=`. Lasciandola, il file verrebbe caricato due volte — dalla 2.0.1 è
-   innocuo, perché la registrazione dell'elemento è idempotente, ma resta spreco.
+2. **Non toccare la risorsa Lovelace.** Dalla 2.0.2 la gestisce l'integrazione: se ne
+   trova già una la aggiorna all'URL della versione installata, altrimenti la crea. Gli
+   aggiornamenti non richiedono più di svuotare la cache né il trucco del `?v=`.
 
 3. **Aggiungi l'integrazione** e inserisci host, porta e token.
 
@@ -109,7 +107,8 @@ invocarlo a mano.
 ## Cosa cambia nella 2.0.0
 
 - Configurazione da interfaccia, con test della connessione; YAML rimosso
-- Card inclusa e registrata dall'integrazione, con cache-busting per versione
+- Card inclusa e registrata dall'integrazione come risorsa Lovelace, con cache-busting
+  per versione
 - Riconnessione con backoff esponenziale ed errore loggato una volta per episodio, non a
   ogni tentativo
 - Disponibilità reale dell'entità, e nuovo binary sensor di connessione

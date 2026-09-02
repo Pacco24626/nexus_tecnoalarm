@@ -4,13 +4,14 @@
   "codeowners": [],
   "dependencies": [
     "http",
-    "frontend"
+    "frontend",
+    "lovelace"
   ],
   "documentation": "https://github.com/Pacco24626/nexus_tecnoalarm",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Pacco24626/nexus_tecnoalarm/issues",
   "requirements": [],
-  "version": "2.0.1",
+  "version": "2.0.2",
   "config_flow": true
 }

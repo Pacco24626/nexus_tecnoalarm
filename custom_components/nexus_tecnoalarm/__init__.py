@@ -113,10 +113,57 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         _LOGGER.debug("Percorso statico gia' registrato: %s", err)
 
     integration = await async_get_integration(hass, DOMAIN)
-    add_extra_js_url(hass, f"{CARD_URL_BASE}/{CARD_FILENAME}?v={integration.version}")
+    url = f"{CARD_URL_BASE}/{CARD_FILENAME}?v={integration.version}"
+
+    await _async_registra_risorsa(hass, url)
 
     dominio["card_registrata"] = True
-    _LOGGER.debug("Card registrata su %s/%s", CARD_URL_BASE, CARD_FILENAME)
+    _LOGGER.debug("Card registrata su %s", url)
+
+
+async def _async_registra_risorsa(hass: HomeAssistant, url: str) -> None:
+    """Registra la card come risorsa Lovelace.
+
+    E' l'unico meccanismo che Lovelace ATTENDE prima di disegnare le schede.
+    `add_extra_js_url` carica il modulo in modo asincrono e non atteso: la
+    plancia puo' disegnare prima che l'elemento sia definito e ripiegare su
+    "Custom element doesn't exist", che e' esattamente cosa succedeva nella
+    2.0.1. Resta come ripiego per le installazioni con Lovelace in modalita'
+    YAML, dove le risorse non sono modificabili da codice.
+    """
+    lovelace = hass.data.get("lovelace")
+    resources = getattr(lovelace, "resources", None)
+    if resources is None and isinstance(lovelace, dict):
+        resources = lovelace.get("resources")
+
+    if resources is None:
+        _LOGGER.debug("Risorse Lovelace non disponibili: uso add_extra_js_url")
+        add_extra_js_url(hass, url)
+        return
+
+    try:
+        await resources.async_get_info()
+        esistente = next(
+            (r for r in resources.async_items() if CARD_FILENAME in r.get("url", "")),
+            None,
+        )
+        if esistente is None:
+            await resources.async_create_item({"res_type": "module", "url": url})
+            _LOGGER.info("Risorsa Lovelace della card creata: %s", url)
+        elif esistente.get("url") != url:
+            # Aggiornamento di versione: si riscrive l'URL invece di crearne
+            # un secondo, che caricherebbe il file due volte.
+            await resources.async_update_item(esistente["id"], {"url": url})
+            _LOGGER.info("Risorsa Lovelace della card aggiornata: %s", url)
+    except Exception as err:  # noqa: BLE001
+        # Lovelace in modalita' YAML, o collezione non scrivibile.
+        _LOGGER.warning(
+            "Impossibile registrare la risorsa Lovelace (%s). "
+            "Aggiungila a mano come modulo JavaScript: %s",
+            err,
+            url,
+        )
+        add_extra_js_url(hass, url)
 
 
 # -----------------------------------------------------------------------------
