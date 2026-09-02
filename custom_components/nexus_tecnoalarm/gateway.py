@@ -267,7 +267,13 @@ class KeypadGateway:
             self.note_presence()
             self.notify()
 
-            ping_task = self.hass.async_create_task(self._async_keepalive(ws))
+            # DEVE essere un background task. hass.async_create_task registra
+            # il task fra quelli che Home Assistant attende in
+            # async_block_till_done, cioe' nella fase di completamento
+            # dell'avvio: un ciclo infinito li' dentro blocca il boot.
+            ping_task = self.entry.async_create_background_task(
+                self.hass, self._async_keepalive(ws), f"{self.entry.entry_id}_ping"
+            )
             try:
                 await self._async_listen(ws)
             finally:

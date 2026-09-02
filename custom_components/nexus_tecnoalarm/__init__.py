@@ -17,6 +17,7 @@ import voluptuous as vol
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -115,7 +116,16 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     integration = await async_get_integration(hass, DOMAIN)
     url = f"{CARD_URL_BASE}/{CARD_FILENAME}?v={integration.version}"
 
-    await _async_registra_risorsa(hass, url)
+    if hass.is_running:
+        await _async_registra_risorsa(hass, url)
+    else:
+        # Scrivere nella collezione delle risorse Lovelace mentre Home
+        # Assistant sta ancora avviando significa toccare lo storage in una
+        # fase gia' affollata: si aspetta che il boot sia concluso.
+        async def _dopo_avvio(_event) -> None:
+            await _async_registra_risorsa(hass, url)
+
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _dopo_avvio)
 
     dominio["card_registrata"] = True
     _LOGGER.debug("Card registrata su %s", url)
