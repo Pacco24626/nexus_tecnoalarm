@@ -135,3 +135,7 @@ invocarlo a mano.
 - TLS e verifica del certificato espliciti, non più dedotti dal numero di porta
 
 Il **flow del gateway non richiede alcuna modifica**: il protocollo sul filo è invariato.
+
+## Licenza
+
+Apache 2.0 — Copyright 2026 Automatic Systems. Vedi [LICENSE](LICENSE).
