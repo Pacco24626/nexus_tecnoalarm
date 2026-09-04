@@ -4,6 +4,7 @@
   "codeowners": [
     "@Pacco24626"
   ],
+  "config_flow": true,
   "dependencies": [
     "http",
     "frontend",
@@ -14,6 +15,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Pacco24626/nexus_tecnoalarm/issues",
   "requirements": [],
-  "version": "2.1.1",
-  "config_flow": true
+  "version": "2.1.1"
 }
