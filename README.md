@@ -96,6 +96,22 @@ type: custom:nexus-tecnoalarm-card
 entity: sensor.nexus_tecnoalarm_keypad
 ```
 
+Dalla 2.1.0 la card e' ridisegnata sulla F127EVLCD:
+
+- **marchio originale**, con una variante schiarita per il tema scuro, dove il navy
+  Tecnoalarm sarebbe illeggibile;
+- **display a campo reale**, 16 caratteri per 2 righe come l'apparecchio;
+- **spie con i nomi per esteso** — Rete, Guasto, Manomissione, Batteria — che
+  lampeggiano quando il gateway segnala l'attributo intermittente;
+- **programmi come fascia di segnalazioni**, non come tasti: non essendo associati a
+  nulla, premerli non faceva niente. Il numero stesso e' la spia: neutro a riposo,
+  ambra se inserito, rosso in allarme;
+- **tasti a pastiglia** come sulla serigrafia, con il solo YES nel colore primario del
+  tema perche' e' l'unico che chiude un'azione.
+
+Tutto segue il tema di Home Assistant, chiaro e scuro, e le misure scalano sulla
+larghezza della card: in una sezione stretta resta leggibile.
+
 ## Servizi
 
 `nexus_tecnoalarm.send_key` — invia un tasto. Campo `code`, 0-9 per le cifre e 10-15 per i

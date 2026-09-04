@@ -1,474 +1,507 @@
+/**
+ * Nexus Tecnoalarm Keypad — card Lovelace
+ *
+ * Disegna la tastiera F127EVLCD leggendo un'unica entita': lo stato e' la
+ * riga 1 del display, il resto del pannello sta nei suoi attributi.
+ *
+ * I codici dei tasti sono quelli del gateway e non vanno toccati:
+ *   0-9 cifre, 10 MEM, 11 EXIT, 12 giu', 13 su', 14 NO, 15 YES.
+ */
+
+const VERSIONE_CARD = "2.1.0";
+const BASE_RISORSE = "/nexus_tecnoalarm_local";
+
+/* I tasti nell'ordine dell'apparecchio: cifre a sinistra, comandi nella
+   quarta colonna, come sulla serigrafia. */
+const TASTI = [
+  { etichetta: "1", codice: 1 },
+  { etichetta: "2", codice: 2 },
+  { etichetta: "3", codice: 3 },
+  { etichetta: "MEM", codice: 10, piccolo: true },
+  { etichetta: "4", codice: 4 },
+  { etichetta: "5", codice: 5 },
+  { etichetta: "6", codice: 6 },
+  { etichetta: "EXIT", codice: 11, piccolo: true },
+  { etichetta: "7", codice: 7 },
+  { etichetta: "8", codice: 8 },
+  { etichetta: "9", codice: 9 },
+  { etichetta: "▲", codice: 13, piccolo: true },
+  { etichetta: "NO", codice: 14, piccolo: true },
+  { etichetta: "0", codice: 0 },
+  { etichetta: "YES", codice: 15, piccolo: true, conferma: true },
+  { etichetta: "▼", codice: 12, piccolo: true },
+];
+
+const SPIE = [
+  { chiave: "rete", nome: "Rete" },
+  { chiave: "guasto", nome: "Guasto" },
+  { chiave: "tamper", nome: "Manomissione" },
+  { chiave: "batteria", nome: "Batteria" },
+];
+
+const STILE = `
+  ha-card {
+    --tasto-fondo: color-mix(in srgb, var(--primary-text-color) 15%, var(--card-background-color, #fff));
+    --tasto-bordo: color-mix(in srgb, var(--primary-text-color) 28%, var(--card-background-color, #fff));
+    --tasto-premuto: color-mix(in srgb, var(--primary-text-color) 26%, var(--card-background-color, #fff));
+    --vetro: color-mix(in srgb, var(--primary-text-color) 6%, var(--card-background-color, #fff));
+    --spia-spenta: color-mix(in srgb, var(--primary-text-color) 18%, var(--card-background-color, #fff));
+    --ok: var(--success-color, #2f9e52);
+    --attenzione: var(--warning-color, #d99012);
+    --allarme: var(--error-color, #cf3b30);
+
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    user-select: none;
+  }
+
+  /* Il marchio: l'immagine originale, con la variante schiarita quando il
+     tema e' scuro, altrimenti il navy sparirebbe nel fondo. */
+  .marchio {
+    height: 21px;
+    background-image: url("${BASE_RISORSE}/logo.png");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+  }
+  ha-card.scuro .marchio { background-image: url("${BASE_RISORSE}/logo-scuro.png"); }
+
+  /* Display: campo di 16 caratteri per 2 righe, come l'apparecchio. */
+  .lcd {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 16px;
+    border-radius: 10px;
+    background: var(--vetro);
+    border: 1px solid var(--divider-color, #d3d9de);
+    color: var(--primary-text-color);
+    font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: clamp(13px, 3.4cqw, 17px);
+    font-weight: 500;
+    letter-spacing: .06em;
+    font-variant-numeric: tabular-nums;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .lcd span { min-height: 1.3em; }
+
+  .spie { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .spia { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+  .spia i { width: 100%; height: 5px; border-radius: 3px; background: var(--spia-spenta); }
+  .spia b {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--secondary-text-color);
+    text-align: center;
+    line-height: 1.15;
+  }
+  .spia[data-colore] b { color: var(--primary-text-color); }
+  .spia[data-colore="verde"] i { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .spia[data-colore="ambra"] i { background: var(--attenzione); box-shadow: 0 0 8px var(--attenzione); }
+  .spia[data-colore="rosso"] i { background: var(--allarme); box-shadow: 0 0 8px var(--allarme); }
+  .spia[data-lampeggia] i { animation: lampeggio 1s steps(1, end) infinite; }
+
+  /* Programmi: segnalazioni, non comandi. Il numero e' la spia. */
+  .fascia { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .fascia h3 {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--secondary-text-color);
+    flex: none;
+  }
+  .pastiglie { display: flex; gap: 5px; flex: 1; min-width: 0; }
+  .pastiglia {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    background: var(--vetro);
+    border: 1px solid var(--divider-color, #d3d9de);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--secondary-text-color);
+  }
+  .pastiglia[data-stato="inserito"] {
+    background: var(--attenzione);
+    border-color: var(--attenzione);
+    color: #2a1c02;
+  }
+  .pastiglia[data-stato="allarme"] {
+    background: var(--allarme);
+    border-color: var(--allarme);
+    color: #fff;
+  }
+  .pastiglia[data-lampeggia] { animation: lampeggio 1s steps(1, end) infinite; }
+  .pastiglia[data-lampeggia="lento"] { animation-duration: 2s; }
+
+  @keyframes lampeggio { 0%, 60% { opacity: 1; } 61%, 100% { opacity: .25; } }
+
+  .tastierino { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+  .tasto {
+    appearance: none;
+    font: inherit;
+    cursor: pointer;
+    aspect-ratio: 1 / .74;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--tasto-fondo);
+    border: 1px solid var(--tasto-bordo);
+    color: var(--primary-text-color);
+    font-size: clamp(13px, 3.2cqw, 17px);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: background .12s ease, transform .06s ease;
+  }
+  .tasto:hover { background: var(--tasto-premuto); }
+  .tasto:active { transform: translateY(1px) scale(.985); }
+  .tasto:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+  .tasto.piccolo { font-size: clamp(10px, 2.4cqw, 13px); letter-spacing: .03em; }
+  .tasto.conferma {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
+  .tasto.conferma:hover { background: var(--primary-color); filter: brightness(1.12); }
+
+  /* Gateway muto: si spegne tutto invece di far credere che risponda. */
+  ha-card.assente .tastierino,
+  ha-card.assente .fascia,
+  ha-card.assente .spie { opacity: .4; pointer-events: none; }
+
+  .avviso { padding: 16px; color: var(--error-color, #cf3b30); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spia[data-lampeggia] i, .pastiglia[data-lampeggia] { animation: none; }
+    .tasto { transition: none; }
+  }
+`;
+
+/** Riempie a 16 caratteri, come il display dell'apparecchio. */
+function a16(testo) {
+  return String(testo == null ? "" : testo).padEnd(16, " ").slice(0, 16);
+}
+
+/** Vero se una delle due grafie dell'attributo lampeggiante e' attiva. */
+function lampeggia(oggetto, chiave) {
+  return Boolean(oggetto[`attr_${chiave}`] || oggetto[`${chiave}_attr`]);
+}
+
 class NexusTecnoalarmCard extends HTMLElement {
+  // ---------------------------------------------------------------------
+  // Presenza: il gateway tiene agganciata la tastiera solo mentre riceve il
+  // battito. Invariato rispetto alla 1.x, e' cio' che il flow si aspetta.
+  // ---------------------------------------------------------------------
   connectedCallback() {
-    this._visHandler = () => {
-      if (document.visibilityState === 'visible') {
-        this._sendPresence();
-      }
+    this._visibilita = () => {
+      if (document.visibilityState === "visible") this._presenza();
     };
-    document.addEventListener('visibilitychange', this._visHandler);
-    
-    // Manda subito se visibile
-    if (document.visibilityState === 'visible') {
-      this._sendPresence();
-    }
-    
-    // Timer periodico 5s
-    this._presenceTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        this._sendPresence();
-      }
+    document.addEventListener("visibilitychange", this._visibilita);
+    this._presenza();
+    this._timer = setInterval(() => {
+      if (document.visibilityState === "visible") this._presenza();
     }, 5000);
   }
 
   disconnectedCallback() {
-    if (this._presenceTimer) {
-      clearInterval(this._presenceTimer);
-      this._presenceTimer = null;
-    }
-    if (this._visHandler) {
-      document.removeEventListener('visibilitychange', this._visHandler);
-      this._visHandler = null;
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    if (this._visibilita) {
+      document.removeEventListener("visibilitychange", this._visibilita);
+      this._visibilita = null;
     }
   }
 
-  _sendPresence() {
-    if (this._hass && document.visibilityState === 'visible') {
-      this._hass.callService('nexus_tecnoalarm', 'keypad_presence', {});
+  _presenza() {
+    if (this._hass && document.visibilityState === "visible") {
+      this._hass.callService("nexus_tecnoalarm", "keypad_presence", {});
     }
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    const entityId = this.config.entity || 'sensor.nexus_tecnoalarm_keypad';
-    const stateObj = hass.states[entityId];
-
-    if (!stateObj) {
-      this.innerHTML = `<ha-card style="padding:16px; color:red;">Entità ${entityId} non trovata.</ha-card>`;
-      this.content = false;
-      return;
-    }
-
-    // Costruisci il template se non è ancora stato fatto
-    if (!this.content) {
-      this.buildCard();
-    }
-
-    // Dalla 2.0.0 il sensore diventa davvero "non disponibile" quando il
-    // gateway non risponde, invece di riportare la stringa "Disconnesso".
-    // Senza questo controllo il display stamperebbe "unavailable".
-    if (stateObj.state === "unavailable" || stateObj.state === "unknown") {
-      if (this.querySelector('#lcd-row1')) {
-        this.querySelector('#lcd-row1').textContent = "TASTIERA".padEnd(16, ' ');
-      }
-      if (this.querySelector('#lcd-row2')) {
-        this.querySelector('#lcd-row2').textContent = "NON CONNESSA".padEnd(16, ' ');
-      }
-      return;
-    }
-
-    const payload = stateObj.attributes;
-    const riga1 = stateObj.state || "";
-    const riga2 = payload.riga2 || "";
-
-    // Aggiorna Display LCD
-    if (this.querySelector('#lcd-row1')) {
-      this.querySelector('#lcd-row1').textContent = riga1.padEnd(16, ' ');
-    }
-    if (this.querySelector('#lcd-row2')) {
-      this.querySelector('#lcd-row2').textContent = riga2.padEnd(16, ' ');
-    }
-
-    // Aggiorna LED Diagnostici (Stato e Classi Lampeggio)
-    // RETE: verde se attiva, rosso lampeggiante se assente
-    if (payload.rete) {
-      this._updateLed('led-rete', true, (payload.attr_rete || payload.rete_attr), 'green-on');
-    } else {
-      this._updateLed('led-rete', true, true, 'red-on', 'blink');
-    }
-    
-    // GUASTO: giallo se presente / lampeggiante
-    const guastoActive = !!(payload.guasto || payload.attr_guasto || payload.guasto_attr);
-    const guastoBlink = !!(payload.attr_guasto || payload.guasto_attr);
-    this._updateLed('led-guasto', guastoActive, guastoBlink, 'yellow-on');
-
-    // TAMPER: rosso se presente / lampeggiante
-    const tamperActive = !!(payload.tamper || payload.attr_tamper || payload.tamper_attr);
-    const tamperBlink = !!(payload.attr_tamper || payload.tamper_attr);
-    this._updateLed('led-tamper', tamperActive, tamperBlink, 'red-on');
-
-    // BATTERIA: arancione se presente / lampeggiante
-    const battActive = !!(payload.batteria || payload.attr_batt || payload.batteria_attr);
-    const battBlink = !!(payload.attr_batt || payload.batteria_attr);
-    this._updateLed('led-batt', battActive, battBlink, 'orange-on');
-
-    // Aggiorna LED Programmi (P1 a P8)
-    const progs = payload.programmi || [];
-    for (let i = 0; i < 8; i++) {
-      const p = progs[i] || {};
-      const statusLedId = `prog-s${i+1}`;
-      const alarmLedId = `prog-a${i+1}`;
-      
-      const armedActive = !!(p.stato || p.attr_stato || p.stato_attr);
-      const armedBlink = !!(p.attr_stato || p.stato_attr);
-      const armedBlinkClass = p.stato ? 'blink-slow' : 'blink';
-      
-      const alarmActive = !!(p.allarme || p.attr_allarme || p.allarme_attr);
-      const alarmBlink = !!(p.attr_allarme || p.allarme_attr);
-      const alarmBlinkClass = p.allarme ? 'blink-slow' : 'blink';
-      
-      // LED Stato Programma: giallo se inserito / lampeggiante
-      this._updateLed(statusLedId, armedActive, armedBlink, 'yellow-on', armedBlinkClass);
-      
-      // LED Allarme Programma: rosso se allarme / lampeggiante
-      this._updateLed(alarmLedId, alarmActive, alarmBlink, 'red-on', alarmBlinkClass);
-    }
+  _inviaTasto(codice) {
+    this._hass.callService("nexus_tecnoalarm", "send_key", { code: codice });
   }
 
-  _updateLed(id, active, blink, colorClass, blinkClass = 'blink') {
-    const el = this.querySelector(`#${id}`);
-    if (!el) return;
-    el.className = 'dot'; // Reset
-    if (active) {
-      el.classList.add(colorClass);
-      if (blink) el.classList.add(blinkClass);
-    }
+  // ---------------------------------------------------------------------
+  // Configurazione
+  // ---------------------------------------------------------------------
+  static getConfigElement() {
+    return document.createElement("nexus-tecnoalarm-card-editor");
   }
 
-  buildCard() {
-    let progGridHtml = '';
-    for (let i = 1; i <= 8; i++) {
-      progGridHtml += `
-        <div class="prog-cell">
-          <span class="p-label">P${i}</span>
-          <div class="prog-leds">
-            <div class="dot" id="prog-s${i}" title="Stato"></div>
-            <div class="dot" id="prog-a${i}" title="Allarme"></div>
-          </div>
-        </div>
-      `;
-    }
-
-    this.innerHTML = `
-      <ha-card>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap');
-          
-          .keypad-container {
-            background: #0d0d0d;
-            font-family: 'Inter', 'Segoe UI', sans-serif;
-            color: #fff;
-            padding: 16px;
-            border-radius: 12px;
-            max-width: 400px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            border: 1px solid #1a1a1a;
-            box-sizing: border-box;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-          }
-
-          /* --- Header --- */
-          .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #222;
-          }
-          .header .brand {
-            width: 100%;
-            text-align: center;
-            font-size: 14px;
-            font-weight: 700;
-            letter-spacing: 2px;
-            color: #00e0ff;
-            text-transform: uppercase;
-          }
-
-          /* --- Pannello Display --- */
-          .display-panel {
-            background: #080808;
-            padding: 12px;
-            border-radius: 10px;
-            border: 1px solid #1a1a1a;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-          }
-
-          /* LED Diagnostica */
-          .diag-leds {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            background: #0a0a0a;
-            padding: 6px;
-            border-radius: 6px;
-            border: 1px solid #1a1a1a;
-          }
-          .diag-led-row {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-          }
-          .diag-led-row .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #2a2a2a;
-            transition: all 0.15s;
-            flex-shrink: 0;
-          }
-          .diag-led-row .lbl {
-            font-size: 8px;
-            font-weight: 700;
-            color: #555;
-            letter-spacing: 0.5px;
-            white-space: nowrap;
-          }
-
-          /* LED States */
-          .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #1a1a1a;
-            transition: all 0.15s;
-          }
-          .dot.green-on  { background: #00e676 !important; box-shadow: 0 0 6px #00e676, inset 0 0 2px #fff; }
-          .dot.cyan-on   { background: #00e0ff !important; box-shadow: 0 0 6px #00e0ff, inset 0 0 2px #fff; }
-          .dot.red-on    { background: #ff3333 !important; box-shadow: 0 0 6px #ff3333, inset 0 0 2px #fff; }
-          .dot.yellow-on { background: #ffcc00 !important; box-shadow: 0 0 6px #ffcc00, inset 0 0 2px #fff; }
-          .dot.orange-on { background: #ff9800 !important; box-shadow: 0 0 6px #ff9800, inset 0 0 2px #fff; }
-
-          /* Blink animation */
-          @keyframes blink-led { 0%,49% { opacity: 1; } 50%,100% { opacity: 0.1; } }
-          .dot.blink { animation: blink-led 1s step-end infinite; }
-          @keyframes blink-led-slow { 0%,69% { opacity: 1; } 70%,100% { opacity: 0.15; } }
-          .dot.blink-slow { animation: blink-led-slow 2s step-end infinite; }
-
-          /* LCD Screen */
-          .lcd {
-            flex: 1;
-            font-family: 'Roboto Mono', 'Courier New', monospace;
-            background: #051622;
-            color: #00e0ff;
-            text-shadow: 0 0 5px rgba(0,224,255,0.7);
-            padding: 10px 12px;
-            border-radius: 6px;
-            border: 2px solid #0a2030;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.9);
-            font-weight: 700;
-            font-size: 15px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            line-height: 1.4;
-            min-height: 48px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-          }
-          .lcd .row { white-space: pre; height: 20px; overflow: hidden; }
-
-          /* --- Stato Programmi --- */
-          .programs-panel {
-            background: #0a0a0a;
-            padding: 8px;
-            border-radius: 8px;
-            border: 1px solid #1a1a1a;
-          }
-          .programs-panel .title {
-            text-align: center;
-            font-size: 8px;
-            font-weight: 700;
-            color: #444;
-            margin-bottom: 6px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-          }
-          .programs-grid {
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            gap: 4px;
-          }
-          .prog-cell {
-            text-align: center;
-            background: #111;
-            padding: 4px 2px;
-            border-radius: 4px;
-            border: 1px solid #1a1a1a;
-          }
-          .prog-cell .p-label {
-            font-size: 9px;
-            font-weight: 700;
-            color: #888;
-            display: block;
-            margin-bottom: 3px;
-          }
-          .prog-leds {
-            display: flex;
-            justify-content: center;
-            gap: 4px;
-          }
-          .prog-leds .dot {
-            width: 6px;
-            height: 6px;
-          }
-
-          /* --- Pulsantiera 4x4 --- */
-          .keypad-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-          }
-          .key-btn {
-            background: #1e1e1e;
-            color: #e0e0e0;
-            border: 1px solid #333;
-            border-radius: 10px;
-            padding: 14px 0;
-            font-size: 20px;
-            font-weight: 700;
-            font-family: 'Inter', sans-serif;
-            cursor: pointer;
-            box-shadow: 0 4px 0 #111, 0 4px 8px rgba(0,0,0,0.5);
-            transition: all 0.06s ease;
-            -webkit-tap-highlight-color: transparent;
-            touch-action: manipulation;
-            box-sizing: border-box;
-          }
-          .key-btn:active {
-            transform: translateY(3px);
-            box-shadow: 0 1px 0 #111, 0 1px 2px rgba(0,0,0,0.4);
-            background: #2a2a2a;
-          }
-          .key-btn.fn {
-            background: #151a1e;
-            border-color: #222;
-            font-size: 13px;
-            font-weight: 700;
-            box-shadow: 0 4px 0 #0a0d10, 0 4px 8px rgba(0,0,0,0.5);
-          }
-          .key-btn.fn:active {
-            transform: translateY(3px);
-            box-shadow: 0 1px 0 #0a0d10, 0 1px 2px rgba(0,0,0,0.4);
-            background: #1a2028;
-          }
-          .c-cyan   { color: #00e0ff; }
-          .c-yellow { color: #ffc107; }
-          .c-orange { color: #fd7e14; }
-          .c-green  { color: #28a745; }
-          .c-red    { color: #dc3545; }
-        </style>
-        
-        <div class="keypad-container">
-          <!-- Header -->
-          <div class="header">
-            <span class="brand">TECNOALARM</span>
-          </div>
-
-          <!-- Display + LED Diagnostica -->
-          <div class="display-panel">
-            <div class="diag-leds">
-              <div class="diag-led-row"><div class="dot" id="led-rete"></div><span class="lbl">RET</span></div>
-              <div class="diag-led-row"><div class="dot" id="led-guasto"></div><span class="lbl">GUA</span></div>
-              <div class="diag-led-row"><div class="dot" id="led-tamper"></div><span class="lbl">MAN</span></div>
-              <div class="diag-led-row"><div class="dot" id="led-batt"></div><span class="lbl">BAT</span></div>
-            </div>
-            <div class="lcd">
-              <div class="row" id="lcd-row1">CONNESSIONE...</div>
-              <div class="row" id="lcd-row2">ATTENDERE</div>
-            </div>
-          </div>
-
-          <!-- Stato Programmi -->
-          <div class="programs-panel">
-            <div class="title">Stato Programmi</div>
-            <div class="programs-grid">
-              ${progGridHtml}
-            </div>
-          </div>
-
-          <!-- Pulsantiera 4x4 -->
-          <div class="keypad-grid">
-            <button class="key-btn" data-key="1">1</button>
-            <button class="key-btn" data-key="2">2</button>
-            <button class="key-btn" data-key="3">3</button>
-            <button class="key-btn fn c-cyan" data-key="10">MEM</button>
-
-            <button class="key-btn" data-key="4">4</button>
-            <button class="key-btn" data-key="5">5</button>
-            <button class="key-btn" data-key="6">6</button>
-            <button class="key-btn fn c-yellow" data-key="13">▲</button>
-
-            <button class="key-btn" data-key="7">7</button>
-            <button class="key-btn" data-key="8">8</button>
-            <button class="key-btn" data-key="9">9</button>
-            <button class="key-btn fn c-yellow" data-key="12">▼</button>
-
-            <button class="key-btn fn c-orange" data-key="14">* NO</button>
-            <button class="key-btn" data-key="0">0</button>
-            <button class="key-btn fn c-green" data-key="15"># YES</button>
-            <button class="key-btn fn c-red" data-key="11">EXIT</button>
-          </div>
-        </div>
-      </ha-card>
-    `;
-
-    // Attach click events
-    this.querySelectorAll('.key-btn').forEach(button => {
-      button.addEventListener('click', () => {
-        this._sendKey(button.dataset.key);
-      });
-    });
-
-    this.content = true;
+  static getStubConfig(hass) {
+    const trovata = Object.keys(hass.states).find(
+      (id) => id.startsWith("sensor.") && hass.states[id].attributes.programmi !== undefined
+    );
+    return { entity: trovata || "sensor.nexus_tecnoalarm_keypad" };
   }
 
   setConfig(config) {
     this.config = config;
-    this.content = false; // Forza il build al primo render/cambio configurazione
+    this._costruita = false;
+    this.innerHTML = "";
   }
 
-  _sendKey(keyCode) {
-    this._hass.callService('nexus_tecnoalarm', 'send_key', {
-      code: parseInt(keyCode)
+  getCardSize() { return 8; }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._aggiorna();
+  }
+
+  // ---------------------------------------------------------------------
+  // Costruzione
+  // ---------------------------------------------------------------------
+  _costruisci() {
+    const card = document.createElement("ha-card");
+    // Le misure dei tasti e del display scalano sulla larghezza della card,
+    // non su quella della finestra: in una sezione stretta resta leggibile.
+    card.style.containerType = "inline-size";
+
+    const stile = document.createElement("style");
+    stile.textContent = STILE;
+    card.appendChild(stile);
+
+    this._el = { card };
+
+    this._el.marchio = document.createElement("div");
+    this._el.marchio.className = "marchio";
+    this._el.marchio.setAttribute("role", "img");
+    this._el.marchio.setAttribute("aria-label", "Tecnoalarm");
+    card.appendChild(this._el.marchio);
+
+    const lcd = document.createElement("div");
+    lcd.className = "lcd";
+    this._el.riga1 = document.createElement("span");
+    this._el.riga2 = document.createElement("span");
+    lcd.appendChild(this._el.riga1);
+    lcd.appendChild(this._el.riga2);
+    card.appendChild(lcd);
+
+    const spie = document.createElement("div");
+    spie.className = "spie";
+    this._el.spie = SPIE.map(({ nome }) => {
+      const spia = document.createElement("div");
+      spia.className = "spia";
+      const luce = document.createElement("i");
+      const testo = document.createElement("b");
+      testo.textContent = nome;
+      spia.appendChild(luce);
+      spia.appendChild(testo);
+      spie.appendChild(spia);
+      return spia;
+    });
+    card.appendChild(spie);
+
+    const fascia = document.createElement("div");
+    fascia.className = "fascia";
+    const titolo = document.createElement("h3");
+    titolo.textContent = "Programmi";
+    const pastiglie = document.createElement("div");
+    pastiglie.className = "pastiglie";
+    this._el.programmi = Array.from({ length: 8 }, (_, i) => {
+      const pastiglia = document.createElement("span");
+      pastiglia.className = "pastiglia";
+      pastiglia.textContent = String(i + 1);
+      pastiglie.appendChild(pastiglia);
+      return pastiglia;
+    });
+    fascia.appendChild(titolo);
+    fascia.appendChild(pastiglie);
+    card.appendChild(fascia);
+
+    const tastierino = document.createElement("div");
+    tastierino.className = "tastierino";
+    TASTI.forEach(({ etichetta, codice, piccolo, conferma }) => {
+      const tasto = document.createElement("button");
+      tasto.className = `tasto${piccolo ? " piccolo" : ""}${conferma ? " conferma" : ""}`;
+      tasto.textContent = etichetta;
+      tasto.setAttribute("aria-label", `Tasto ${etichetta}`);
+      tasto.addEventListener("click", () => this._inviaTasto(codice));
+      tastierino.appendChild(tasto);
+    });
+    card.appendChild(tastierino);
+
+    this.appendChild(card);
+    this._costruita = true;
+  }
+
+  // ---------------------------------------------------------------------
+  // Aggiornamento
+  // ---------------------------------------------------------------------
+  _aggiorna() {
+    if (!this.config || !this._hass) return;
+
+    const entita = this.config.entity || "sensor.nexus_tecnoalarm_keypad";
+    const stato = this._hass.states[entita];
+
+    if (!stato) {
+      this.innerHTML = `<ha-card><div class="avviso">Entità ${entita} non trovata.</div></ha-card>`;
+      this._costruita = false;
+      return;
+    }
+
+    if (!this._costruita) this._costruisci();
+    this._temaScuro();
+
+    const assente = stato.state === "unavailable" || stato.state === "unknown";
+    this._el.card.classList.toggle("assente", assente);
+
+    if (assente) {
+      this._el.riga1.textContent = a16("TASTIERA");
+      this._el.riga2.textContent = a16("NON CONNESSA");
+      return;
+    }
+
+    const payload = stato.attributes || {};
+    this._el.riga1.textContent = a16(stato.state);
+    this._el.riga2.textContent = a16(payload.riga2);
+
+    // Rete: verde quando c'e', rossa lampeggiante quando manca. Le altre tre
+    // sono spente a riposo e si accendono sull'anomalia.
+    SPIE.forEach(({ chiave }, i) => {
+      const spia = this._el.spie[i];
+      let colore = null;
+      let intermittente = false;
+
+      if (chiave === "rete") {
+        if (payload.rete) {
+          colore = "verde";
+          intermittente = lampeggia(payload, "rete");
+        } else {
+          colore = "rosso";
+          intermittente = true;
+        }
+      } else {
+        const attiva = Boolean(payload[chiave]) || lampeggia(payload, chiave);
+        if (attiva) {
+          colore = chiave === "tamper" ? "rosso" : "ambra";
+          intermittente = lampeggia(payload, chiave);
+        }
+      }
+
+      if (colore) spia.setAttribute("data-colore", colore);
+      else spia.removeAttribute("data-colore");
+
+      if (intermittente) spia.setAttribute("data-lampeggia", "");
+      else spia.removeAttribute("data-lampeggia");
+    });
+
+    // Programmi. L'allarme prevale sull'inserimento: se un programma suona,
+    // che sia anche inserito e' un dettaglio secondario.
+    const programmi = payload.programmi || [];
+    this._el.programmi.forEach((pastiglia, i) => {
+      const p = programmi[i] || {};
+      const inAllarme = Boolean(p.allarme) || lampeggia(p, "allarme");
+      const inserito = Boolean(p.stato) || lampeggia(p, "stato");
+
+      if (inAllarme) {
+        pastiglia.setAttribute("data-stato", "allarme");
+        this._intermittenza(pastiglia, lampeggia(p, "allarme"), Boolean(p.allarme));
+      } else if (inserito) {
+        pastiglia.setAttribute("data-stato", "inserito");
+        this._intermittenza(pastiglia, lampeggia(p, "stato"), Boolean(p.stato));
+      } else {
+        pastiglia.removeAttribute("data-stato");
+        pastiglia.removeAttribute("data-lampeggia");
+      }
     });
   }
 
-  getCardSize() {
-    return 6;
+  /** Lampeggio lento quando lo stato di base e' comunque attivo. */
+  _intermittenza(elemento, intermittente, lento) {
+    if (!intermittente) {
+      elemento.removeAttribute("data-lampeggia");
+      return;
+    }
+    elemento.setAttribute("data-lampeggia", lento ? "lento" : "");
+  }
+
+  /**
+   * Sceglie la versione del marchio dal tema in uso.
+   *
+   * Home Assistant non espone "sono in tema scuro": si ricava dal colore del
+   * testo, che in tema scuro e' chiaro.
+   */
+  _temaScuro() {
+    const colore = getComputedStyle(this._el.card).color;
+    const canali = colore.match(/\d+/g);
+    if (!canali) return;
+    const [r, g, b] = canali.map(Number);
+    const luminanza = 0.299 * r + 0.587 * g + 0.114 * b;
+    this._el.card.classList.toggle("scuro", luminanza > 140);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Editor visuale
+// -----------------------------------------------------------------------------
+const SCHEMA_EDITOR = [
+  {
+    name: "entity",
+    required: true,
+    selector: { entity: { integration: "nexus_tecnoalarm", domain: "sensor" } },
+  },
+];
+
+class NexusTecnoalarmCardEditor extends HTMLElement {
+  setConfig(config) { this._config = config; this._aggiorna(); }
+  set hass(hass) { this._hass = hass; this._aggiorna(); }
+
+  _aggiorna() {
+    if (!this._config || !this._hass) return;
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.schema = SCHEMA_EDITOR;
+      this._form.computeLabel = () => "Entità della tastiera";
+      this._form.addEventListener("value-changed", (ev) => {
+        this.dispatchEvent(new CustomEvent("config-changed", {
+          detail: { config: ev.detail.value },
+          bubbles: true,
+          composed: true,
+        }));
+      });
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
   }
 }
 
 // Registrazione idempotente e non fatale.
 //
-// Dalla 2.0.0 questo file viene caricato dall'integrazione su OGNI pagina del
-// frontend, non solo sulla plancia. Due conseguenze da cui difendersi:
-//
-// 1. se resta anche la vecchia risorsa Lovelace, il file viene caricato due
-//    volte e la seconda define() lancerebbe un'eccezione;
-// 2. un'eccezione non gestita qui dentro non rompe una scheda, rompe il
-//    caricamento dell'intera interfaccia.
-//
-// Quindi si controlla prima se l'elemento esiste gia', e comunque non si
-// lascia sfuggire nulla.
+// Questo file viene caricato dal frontend anche fuori dalla plancia: un
+// doppio caricamento non deve lanciare, e un'eccezione qui dentro non deve
+// poter impedire il boot dell'interfaccia.
 try {
-  if (!customElements.get('nexus-tecnoalarm-card')) {
-    customElements.define('nexus-tecnoalarm-card', NexusTecnoalarmCard);
+  if (!customElements.get("nexus-tecnoalarm-card")) {
+    customElements.define("nexus-tecnoalarm-card", NexusTecnoalarmCard);
+    customElements.define("nexus-tecnoalarm-card-editor", NexusTecnoalarmCardEditor);
 
     window.customCards = window.customCards || [];
     window.customCards.push({
-      type: 'nexus-tecnoalarm-card',
-      name: 'Nexus Tecnoalarm Keypad',
-      description: 'Tastiera virtuale Tecnoalarm: display, LED e programmi.',
-      documentationURL: 'https://github.com/Pacco24626/nexus_tecnoalarm',
+      type: "nexus-tecnoalarm-card",
+      name: "Nexus Tecnoalarm Keypad",
+      description: "Tastiera virtuale Tecnoalarm: display, spie e programmi.",
+      preview: true,
+      documentationURL: "https://github.com/Pacco24626/nexus_tecnoalarm",
     });
+
+    console.info(
+      `%c NEXUS-TECNOALARM-CARD %c ${VERSIONE_CARD} `,
+      "color: #fff; background: #003b7a; font-weight: 700;",
+      "color: #003b7a; background: #d6e6f5; font-weight: 700;"
+    );
   }
 } catch (err) {
-  console.error('nexus-tecnoalarm-card: registrazione fallita', err);
+  console.error("nexus-tecnoalarm-card: registrazione fallita", err);
 }
