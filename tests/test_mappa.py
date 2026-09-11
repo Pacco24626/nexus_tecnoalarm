@@ -15,7 +15,14 @@ sys.path.insert(
 )
 
 try:
-    from mappa import Voce, classifica, mappa_vuota, numero_da_topic, pulisci_rifiuto
+    from mappa import (
+        Voce,
+        classifica,
+        con_rifiuto,
+        mappa_vuota,
+        numero_da_topic,
+        pulisci_rifiuto,
+    )
 except ImportError as errore:
     print(f"Errore di importazione: {errore}")
     sys.exit(1)
@@ -118,6 +125,39 @@ verifica("esito vuoto si scarta", pulisci_rifiuto({"esito": "  "}) is None)
 verifica("un booleano non vale come numero",
          "programma" not in (pulisci_rifiuto({"esito": "x", "programma": True}) or {}))
 verifica("un payload che non e' un dizionario si scarta", pulisci_rifiuto(["esito"]) is None)
+
+# --- 9. il rifiuto deve riscrivere lo stato ----------------------------------
+# Home Assistant riscrive uno stato solo se gli attributi nuovi sono diversi da
+# quelli del vecchio stato, di cui tiene una copia SUPERFICIALE (ReadOnlyDict).
+# Qui si rifa' lo stesso confronto.
+def attributi(rifiuti):
+    return {"ruolo": "mappa_allarme", "rifiuti": rifiuti}
+
+
+rifiuto_1 = {"esito": "codice_errato", "programma": 1, "ts": 1000}
+rifiuto_2 = {"esito": "codice_errato", "programma": 1, "ts": 2000}
+
+# Controllo: la modifica sul posto della 2.2.0 rende il confronto uguale.
+# Se questa riga fallisse, la prova sotto non dimostrerebbe niente.
+rifiuti = {}
+vecchio_stato = dict(attributi(rifiuti))
+rifiuti["1"] = rifiuto_1
+verifica("controllo: modificato sul posto, HA non vede differenze",
+         vecchio_stato == attributi(rifiuti))
+
+rifiuti = {}
+vecchio_stato = dict(attributi(rifiuti))
+rifiuti = con_rifiuto(rifiuti, 1, rifiuto_1)
+verifica("primo rifiuto: HA vede lo stato cambiato", vecchio_stato != attributi(rifiuti))
+
+vecchio_stato = dict(attributi(rifiuti))
+rifiuti = con_rifiuto(rifiuti, 1, rifiuto_2)
+verifica("secondo rifiuto di fila: HA vede ancora il cambio", vecchio_stato != attributi(rifiuti))
+verifica("il vecchio stato conserva il ts di prima",
+         vecchio_stato["rifiuti"]["1"]["ts"] == 1000, vecchio_stato)
+
+rifiuti = con_rifiuto(rifiuti, 3, rifiuto_1)
+verifica("un altro programma non cancella il primo", set(rifiuti) == {"1", "3"}, rifiuti)
 
 # --- esito -------------------------------------------------------------------
 falliti = [e for e in esiti if not e[1]]

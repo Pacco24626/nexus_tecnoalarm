@@ -130,6 +130,22 @@ def numero_da_topic(topic: str | None) -> int | None:
     return int(corrispondenza.group(1)) if corrispondenza else None
 
 
+def con_rifiuto(
+    rifiuti: dict[str, dict[str, Any]], numero: int | str, rifiuto: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Un dizionario dei rifiuti NUOVO, con quello del programma sostituito.
+
+    Mai modificarlo sul posto. Home Assistant decide se riscrivere uno stato
+    confrontando gli attributi nuovi con quelli dello stato precedente, e di
+    quelli tiene solo una copia superficiale: il dizionario annidato dei
+    rifiuti e' lo stesso oggetto. Modificato sul posto, cambiava anche nel
+    vecchio stato, il confronto usciva uguale e il sensore non veniva
+    riscritto. La scheda non vedeva mai il rifiuto e restava ferma su
+    «Disinserimento in corso…» (2.2.0, trovato sul campo l'11/09/2026).
+    """
+    return {**rifiuti, str(numero): dict(rifiuto)}
+
+
 def pulisci_rifiuto(dati: Any) -> dict[str, Any] | None:
     """Solo i campi attesi del rifiuto, con i tipi attesi.
 

@@ -23,7 +23,14 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import IDENTIFICATIVO_CENTRALE, NOME_DISPOSITIVO_CENTRALE, TOPIC_RIFIUTO
-from .mappa import Voce, classifica, mappa_vuota, numero_da_topic, pulisci_rifiuto
+from .mappa import (
+    Voce,
+    classifica,
+    con_rifiuto,
+    mappa_vuota,
+    numero_da_topic,
+    pulisci_rifiuto,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -196,5 +203,6 @@ class MappaAllarme:
         if numero is None:
             return
 
-        self.rifiuti[str(numero)] = pulito
+        # Sostituito, non modificato: vedi con_rifiuto.
+        self.rifiuti = con_rifiuto(self.rifiuti, numero, pulito)
         self.notify()
