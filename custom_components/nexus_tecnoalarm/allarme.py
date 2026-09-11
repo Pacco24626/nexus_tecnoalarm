@@ -1,0 +1,200 @@
+"""Scheda allarme: la mappa della centrale e i rifiuti del gateway.
+
+Una card Lovelace gira nel browser con i permessi di chi e' collegato. Sul
+tablet a muro, con un utente di casa, non vede gli unique_id delle entita' — il
+registro completo e' riservato agli amministratori — e non puo' sottoscrivere
+un argomento MQTT, perche' anche quello e' un comando da amministratore.
+Proprio le due cose di cui ha bisogno: gli unique_id per sapere cos'e' ogni
+entita' e in che ordine va, e il topic dei rifiuti per dire «codice errato».
+
+Qui, lato server, si fanno entrambe e se ne pubblica il risultato in un
+sensore che qualunque utente puo' leggere.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import Any
+
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+
+from .const import IDENTIFICATIVO_CENTRALE, NOME_DISPOSITIVO_CENTRALE, TOPIC_RIFIUTO
+from .mappa import Voce, classifica, mappa_vuota, numero_da_topic, pulisci_rifiuto
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class MappaAllarme:
+    """Tiene aggiornata la mappa della centrale e l'ultimo rifiuto per programma."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self.mappa: dict[str, Any] = mappa_vuota()
+        # Chiave: numero del programma come stringa, come arriva alla card.
+        self.rifiuti: dict[str, dict[str, Any]] = {}
+
+        self._listeners: list[CALLBACK_TYPE] = []
+        self._unsub: list[CALLBACK_TYPE] = []
+        self._task: asyncio.Task | None = None
+        self._fermata = False
+
+    # -------------------------------------------------------------------------
+    # Ciclo di vita
+    # -------------------------------------------------------------------------
+    @callback
+    def async_start(self) -> None:
+        self._fermata = False
+        self._ricostruisci()
+
+        # Le entita' della centrale nascono e cambiano via MQTT discovery, anche
+        # dopo l'avvio: una zona aggiunta in programmazione deve comparire da
+        # sola nella scheda.
+        self._unsub.append(
+            self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._su_registro)
+        )
+        self._unsub.append(
+            self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._su_registro)
+        )
+
+        # MQTT puo' non essere ancora pronto: l'attesa va in un task di fondo.
+        # Un task normale verrebbe atteso da async_block_till_done, e un broker
+        # lento tratterrebbe l'avvio di Home Assistant — lo stesso errore che
+        # nella 2.0.0 bloccava il boot con il keep-alive della tastiera.
+        self._task = self.hass.async_create_background_task(
+            self._async_sottoscrivi_rifiuti(), "nexus_tecnoalarm_rifiuti"
+        )
+
+    @callback
+    def async_stop(self) -> None:
+        self._fermata = True
+        for annulla in self._unsub:
+            annulla()
+        self._unsub.clear()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+        self._task = None
+
+    @callback
+    def async_add_listener(self, update: CALLBACK_TYPE) -> CALLBACK_TYPE:
+        self._listeners.append(update)
+
+        @callback
+        def _rimuovi() -> None:
+            if update in self._listeners:
+                self._listeners.remove(update)
+
+        return _rimuovi
+
+    @callback
+    def notify(self) -> None:
+        for update in list(self._listeners):
+            update()
+
+    # -------------------------------------------------------------------------
+    # Mappa
+    # -------------------------------------------------------------------------
+    @callback
+    def _su_registro(self, _event: Event) -> None:
+        # L'evento arriva per qualunque entita' di Home Assistant: si ricostruisce
+        # (costa poco, e' un dispositivo solo) ma si notifica solo se la mappa e'
+        # cambiata davvero, altrimenti il sensore si riscriverebbe di continuo.
+        if self._ricostruisci():
+            self.notify()
+
+    def _ricostruisci(self) -> bool:
+        """Rilegge il dispositivo della centrale. True se la mappa e' cambiata."""
+        dispositivo = dr.async_get(self.hass).async_get_device(
+            identifiers={IDENTIFICATIVO_CENTRALE}
+        )
+
+        if dispositivo is None:
+            nuova = mappa_vuota()
+        else:
+            registro = er.async_get(self.hass)
+            voci = [
+                Voce(
+                    entity_id=voce.entity_id,
+                    unique_id=voce.unique_id,
+                    nome=voce.name,
+                    nome_originale=voce.original_name,
+                    disabilitata=voce.disabled_by is not None,
+                )
+                for voce in er.async_entries_for_device(
+                    registro, dispositivo.id, include_disabled_entities=True
+                )
+            ]
+            nomi_dispositivo = [
+                nome
+                for nome in (dispositivo.name_by_user, dispositivo.name, NOME_DISPOSITIVO_CENTRALE)
+                if nome
+            ]
+            nuova = classifica(voci, nomi_dispositivo)
+
+        cambiata = nuova != self.mappa
+        self.mappa = nuova
+        return cambiata
+
+    # -------------------------------------------------------------------------
+    # Rifiuti
+    # -------------------------------------------------------------------------
+    async def _async_sottoscrivi_rifiuti(self) -> None:
+        """Sottoscrive il topic dei rifiuti, se MQTT c'e'.
+
+        Senza MQTT la scheda funziona lo stesso per inserire e guardare le
+        zone: le manca solo la voce «codice errato», e lo si dice nel log una
+        volta invece di fallire.
+        """
+        from homeassistant.components import mqtt  # noqa: PLC0415
+
+        try:
+            if not await mqtt.async_wait_for_mqtt_client(self.hass):
+                _LOGGER.info(
+                    "MQTT non disponibile: la scheda allarme non potra' segnalare "
+                    "i comandi rifiutati dal gateway"
+                )
+                return
+            annulla = await mqtt.async_subscribe(self.hass, TOPIC_RIFIUTO, self._su_rifiuto)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "Rifiuti del gateway non sottoscritti (%s): la scheda allarme non "
+                "potra' segnalare un codice errato",
+                err,
+            )
+            return
+
+        if self._fermata:
+            # Fermata mentre si aspettava il broker: la sottoscrizione appena
+            # fatta non ha piu' un proprietario e va tolta subito.
+            annulla()
+            return
+        self._unsub.append(annulla)
+        _LOGGER.debug("Rifiuti del gateway sottoscritti su %s", TOPIC_RIFIUTO)
+
+    @callback
+    def _su_rifiuto(self, messaggio: Any) -> None:
+        try:
+            dati = json.loads(messaggio.payload)
+        except (TypeError, ValueError):
+            _LOGGER.debug("Rifiuto non leggibile su %s: %r", messaggio.topic, messaggio.payload)
+            return
+
+        pulito = pulisci_rifiuto(dati)
+        if pulito is None:
+            return
+
+        # Il numero nel topic e' quello su cui la card e' in ascolto: vale lui,
+        # anche se il payload dicesse altro.
+        numero = numero_da_topic(messaggio.topic)
+        if numero is None:
+            numero = pulito.get("programma")
+        if numero is None:
+            return
+
+        self.rifiuti[str(numero)] = pulito
+        self.notify()

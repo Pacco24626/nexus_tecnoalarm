@@ -81,5 +81,21 @@ KEY_CONNECTION = "connection"
 # --- Frontend -----------------------------------------------------------------
 CARD_URL_BASE = "/nexus_tecnoalarm_local"
 CARD_FILENAME = "nexus-tecnoalarm-card.js"
+CARD_ALLARME_FILENAME = "nexus-tecnoalarm-allarme.js"
+# Le card servite dall'integrazione, ognuna registrata come risorsa a se'.
+CARD_FILES = (CARD_FILENAME, CARD_ALLARME_FILENAME)
+
+# --- Scheda allarme -----------------------------------------------------------
+# Il dispositivo su cui il gateway Nexus-T pubblica via MQTT discovery tutte le
+# entita' dell'antifurto. L'identificativo e' cablato nel flow ed e' lo stesso
+# su ogni gateway: vale finche' c'e' un gateway solo per Home Assistant.
+IDENTIFICATIVO_CENTRALE = ("mqtt", "tecnoalarm_gateway")
+NOME_DISPOSITIVO_CENTRALE = "Centrale Tecnoalarm"
+TOPIC_RIFIUTO = "tecnoalarm/programma/+/rifiuto"
+
+KEY_MAPPA = "mappa_allarme"
+# Attributo con cui la scheda allarme riconosce il sensore giusto, e con cui
+# la tastiera lo scarta: entrambi hanno un attributo 'programmi'.
+RUOLO_MAPPA = "mappa_allarme"
 
 STATE_DISCONNECTED = "Disconnesso"

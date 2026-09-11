@@ -12,9 +12,19 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, LEGACY_SENSOR_NAME, LEGACY_SENSOR_UNIQUE_ID
+from .allarme import MappaAllarme
+from .const import (
+    DOMAIN,
+    KEY_MAPPA,
+    LEGACY_SENSOR_NAME,
+    LEGACY_SENSOR_UNIQUE_ID,
+    MANUFACTURER,
+    MODEL,
+    RUOLO_MAPPA,
+)
 from .entity import KeypadEntity
 from .gateway import KeypadGateway
 
@@ -23,7 +33,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     gateway: KeypadGateway = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([KeypadDisplaySensor(gateway)])
+    async_add_entities([KeypadDisplaySensor(gateway), MappaAllarmeSensor(gateway)])
 
 
 class KeypadDisplaySensor(KeypadEntity, SensorEntity):
@@ -55,3 +65,54 @@ class KeypadDisplaySensor(KeypadEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.gateway.attributes
+
+
+class MappaAllarmeSensor(SensorEntity):
+    """La struttura dell'antifurto, per la scheda allarme che la disegna da sola.
+
+    Lo stato e' il numero di elementi mappati; negli attributi ci sono
+    programmi, zone e telecomandi in ordine di programmazione, e l'ultimo
+    rifiuto del gateway per ciascun programma. Perche' serva un sensore invece
+    di lasciar fare tutto alla card, lo spiega allarme.py.
+    """
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_name = "Mappa allarme"
+    _attr_icon = "mdi:shield-home-outline"
+    # Struttura e rifiuti non hanno valore storico.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
+
+    def __init__(self, gateway: KeypadGateway) -> None:
+        self._mappa: MappaAllarme | None = None
+        self._attr_unique_id = f"{gateway.entry.entry_id}_{KEY_MAPPA}"
+        # Stesso dispositivo delle entita' della tastiera. Non si eredita da
+        # KeypadEntity perche' quella si ridisegna a ogni polling della
+        # tastiera, che con la mappa non c'entra.
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, gateway.entry.entry_id)},
+            name=gateway.entry.title,
+            manufacturer=MANUFACTURER,
+            model=MODEL,
+            configuration_url=f"https://{gateway.host}",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._mappa = MappaAllarme(self.hass)
+        self.async_on_remove(self._mappa.async_add_listener(self.async_write_ha_state))
+        self._mappa.async_start()
+        self.async_on_remove(self._mappa.async_stop)
+
+    @property
+    def native_value(self) -> int | None:
+        if self._mappa is None:
+            return None
+        mappa = self._mappa.mappa
+        return len(mappa["programmi"]) + len(mappa["zone"]) + len(mappa["telecomandi"])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        if self._mappa is None:
+            return {"ruolo": RUOLO_MAPPA}
+        return {"ruolo": RUOLO_MAPPA, **self._mappa.mappa, "rifiuti": self._mappa.rifiuti}

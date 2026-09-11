@@ -78,6 +78,7 @@ della versione YAML, quindi `sensor.nexus_tecnoalarm_keypad`, la sua cronologia 
 |---|---|
 | `sensor.nexus_tecnoalarm_keypad` | Riga 1 del display come stato, tutto il payload negli attributi |
 | `binary_sensor.<nome>_connessione_tastiera` | Stato del WebSocket verso il gateway |
+| `sensor.<nome>_mappa_allarme` | Struttura dell'antifurto per la scheda allarme: programmi, zone e telecomandi in ordine di programmazione, e l'ultimo rifiuto del gateway per ciascun programma |
 
 Il sensore del display ora diventa **non disponibile** quando il gateway non risponde,
 invece di riportare la stringa `Disconnesso`. È ciò che permette a un'automazione di
@@ -87,7 +88,7 @@ mostrando `TASTIERA NON CONNESSA` sull'LCD.
 I suoi attributi sono esclusi dal recorder: cambiano a ogni polling e non hanno valore
 storico, quindi non gonfiano più il database.
 
-## Card
+## Card della tastiera
 
 Si aggiunge dal selettore schede, oppure a mano:
 
@@ -111,6 +112,67 @@ Dalla 2.1.0 la card e' ridisegnata sulla F127EVLCD:
 
 Tutto segue il tema di Home Assistant, chiaro e scuro, e le misure scalano sulla
 larghezza della card: in una sezione stretta resta leggibile.
+
+## Scheda allarme
+
+Dalla 2.2.0 l'integrazione porta una seconda card, che mostra l'antifurto intero e
+**si costruisce da sola**:
+
+```yaml
+type: custom:nexus-tecnoalarm-allarme
+entity: sensor.tecnoalarm_mappa_allarme
+```
+
+Quattro blocchi:
+
+- **Programmi** — stato di ciascuno e inserimento a un tocco, senza codice.
+- **Disinserimento** — tastierino con il codice, un pulsante per ciascun programma
+  inserito e un «Disinserisci tutto». I programmi si disinseriscono uno alla volta
+  aspettando l'esito di ciascuno: un codice sbagliato si ferma al primo rifiuto
+  invece di mandare quattro comandi e raccogliere quattro errori.
+- **Zone** — tutte, con l'icona che corrisponde al `device_class` dichiarato
+  dall'installatore e le segnalazioni estese della zona (esclusa, manomissione,
+  guasto, batteria). Un filtro mostra solo quelle aperte, che su una centrale grande
+  e' cio' che serve guardare prima di inserire.
+- **Telecomandi** — interruttori.
+
+Non si elenca niente a mano. La scheda legge le entita' che il gateway Nexus-T
+pubblica sul dispositivo *Centrale Tecnoalarm*: una zona aggiunta in programmazione
+compare da sola, e una tolta sparisce.
+
+### Perche' serve un sensore e non basta la card
+
+Una card gira nel browser con i permessi di chi e' collegato. Sul tablet a muro, con
+un utente di casa, **non vede gli unique_id** delle entita' — il registro completo e'
+riservato agli amministratori — e **non puo' sottoscrivere un argomento MQTT**. Sono
+esattamente le due cose che servono: gli unique_id per sapere cos'e' ogni entita' e in
+che ordine va, e i rifiuti del gateway per dire «codice errato».
+
+L'integrazione le fa lato server e ne pubblica il risultato nel sensore
+`mappa_allarme`, che qualunque utente puo' leggere.
+
+### Il codice
+
+Non viene mai mostrato — sul display ci sono pallini — e si cancella da solo dopo
+trenta secondi. Si passa al servizio `alarm_control_panel.alarm_disarm`:
+
+- con il gateway **dalla V0.8.31** lo verifica il gateway, e un rifiuto arriva
+  sull'argomento `tecnoalarm/programma/<n>/rifiuto`, che l'integrazione inoltra alla
+  scheda;
+- con i gateway **precedenti** lo verifica ancora Home Assistant, e la scheda mostra
+  lo stesso «Codice errato».
+
+L'allarme in corso non si legge dai programmi, che non pubblicano mai `triggered`: la
+fascia rossa in cima segue il sensore *Allarme Generale Centrale*.
+
+### Requisiti e limiti
+
+- Il gateway deve avere attiva la pubblicazione verso Home Assistant.
+- L'integrazione **MQTT** serve solo per i rifiuti. Senza, inserimento, zone e
+  telecomandi funzionano, ma con un gateway V0.8.31 un codice sbagliato non produce
+  nessun messaggio.
+- **Un gateway per Home Assistant.** Il gateway pubblica le entita' con un
+  identificativo fisso: due gateway sullo stesso Home Assistant si sovrapporrebbero.
 
 ## Servizi
 

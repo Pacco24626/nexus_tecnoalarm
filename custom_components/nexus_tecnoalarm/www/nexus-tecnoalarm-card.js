@@ -8,7 +8,7 @@
  *   0-9 cifre, 10 MEM, 11 EXIT, 12 giu', 13 su', 14 NO, 15 YES.
  */
 
-const VERSIONE_CARD = "2.1.0";
+const VERSIONE_CARD = "2.2.0";
 const BASE_RISORSE = "/nexus_tecnoalarm_local";
 
 /* I tasti nell'ordine dell'apparecchio: cifre a sinistra, comandi nella
@@ -240,7 +240,11 @@ class NexusTecnoalarmCard extends HTMLElement {
 
   static getStubConfig(hass) {
     const trovata = Object.keys(hass.states).find(
-      (id) => id.startsWith("sensor.") && hass.states[id].attributes.programmi !== undefined
+      // Anche la mappa dell'allarme ha un attributo 'programmi': va scartata,
+      // altrimenti il selettore potrebbe proporre lei al posto della tastiera.
+      (id) => id.startsWith("sensor.") &&
+        hass.states[id].attributes.programmi !== undefined &&
+        hass.states[id].attributes.ruolo !== "mappa_allarme"
     );
     return { entity: trovata || "sensor.nexus_tecnoalarm_keypad" };
   }

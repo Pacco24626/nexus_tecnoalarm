@@ -1,6 +1,9 @@
 {
   "domain": "nexus_tecnoalarm",
   "name": "Nexus Tecnoalarm Keypad",
+  "after_dependencies": [
+    "mqtt"
+  ],
   "codeowners": [
     "@Pacco24626"
   ],
@@ -15,5 +18,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Pacco24626/nexus_tecnoalarm/issues",
   "requirements": [],
-  "version": "2.1.1"
+  "version": "2.2.0"
 }

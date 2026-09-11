@@ -26,7 +26,7 @@ from homeassistant.loader import async_get_integration
 from .const import (
     ATTR_ENTRY_ID,
     ATTR_KEY_CODE,
-    CARD_FILENAME,
+    CARD_FILES,
     CARD_URL_BASE,
     DOMAIN,
     PLATFORMS,
@@ -114,24 +114,32 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         _LOGGER.debug("Percorso statico gia' registrato: %s", err)
 
     integration = await async_get_integration(hass, DOMAIN)
-    url = f"{CARD_URL_BASE}/{CARD_FILENAME}?v={integration.version}"
+    # Due card nello stesso pacchetto, la tastiera e la scheda allarme: ognuna
+    # e' una risorsa a se', con la versione nell'URL per scavalcare la cache.
+    urls = {
+        nome: f"{CARD_URL_BASE}/{nome}?v={integration.version}" for nome in CARD_FILES
+    }
+
+    async def _registra_tutte() -> None:
+        for nome, url in urls.items():
+            await _async_registra_risorsa(hass, nome, url)
 
     if hass.is_running:
-        await _async_registra_risorsa(hass, url)
+        await _registra_tutte()
     else:
         # Scrivere nella collezione delle risorse Lovelace mentre Home
         # Assistant sta ancora avviando significa toccare lo storage in una
         # fase gia' affollata: si aspetta che il boot sia concluso.
         async def _dopo_avvio(_event) -> None:
-            await _async_registra_risorsa(hass, url)
+            await _registra_tutte()
 
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _dopo_avvio)
 
     dominio["card_registrata"] = True
-    _LOGGER.debug("Card registrata su %s", url)
+    _LOGGER.debug("Card registrate: %s", ", ".join(urls.values()))
 
 
-async def _async_registra_risorsa(hass: HomeAssistant, url: str) -> None:
+async def _async_registra_risorsa(hass: HomeAssistant, nome_file: str, url: str) -> None:
     """Registra la card come risorsa Lovelace.
 
     E' l'unico meccanismo che Lovelace ATTENDE prima di disegnare le schede.
@@ -154,7 +162,7 @@ async def _async_registra_risorsa(hass: HomeAssistant, url: str) -> None:
     try:
         await resources.async_get_info()
         esistente = next(
-            (r for r in resources.async_items() if CARD_FILENAME in r.get("url", "")),
+            (r for r in resources.async_items() if nome_file in r.get("url", "")),
             None,
         )
         if esistente is None:
