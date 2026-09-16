@@ -24,12 +24,14 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import IDENTIFICATIVO_CENTRALE, NOME_DISPOSITIVO_CENTRALE, TOPIC_RIFIUTO
 from .mappa import (
+    Candidato,
     Voce,
     classifica,
     con_rifiuto,
     mappa_vuota,
     numero_da_topic,
     pulisci_rifiuto,
+    scegli_centrale,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -112,11 +114,38 @@ class MappaAllarme:
         if self._ricostruisci():
             self.notify()
 
+    def _dispositivo_centrale(self):
+        """Il dispositivo della centrale, cercato senza API deprecate.
+
+        La centrale e' un dispositivo di MQTT, non nostro: `async_get_device_by_identifier`
+        vuole la voce di configurazione che lo possiede e non fa al caso nostro.
+        `async_get_devices` restituisce tutte le corrispondenze, e la scelta la fa
+        `scegli_centrale`. Su Home Assistant precedenti al 2026.9 quella funzione non
+        esiste e si ricade sulla vecchia ricerca.
+        """
+        registro = dr.async_get(self.hass)
+        cerca = getattr(registro, "async_get_devices", None)
+        if cerca is None:
+            return registro.async_get_device(identifiers={IDENTIFICATIVO_CENTRALE})
+
+        trovati = cerca(identifiers={IDENTIFICATIVO_CENTRALE})
+        candidati = [
+            Candidato(
+                id=dispositivo.id,
+                domini=frozenset(
+                    voce.domain
+                    for voce_id in dispositivo.config_entries
+                    if (voce := self.hass.config_entries.async_get_entry(voce_id)) is not None
+                ),
+            )
+            for dispositivo in trovati
+        ]
+        scelto = scegli_centrale(candidati)
+        return next((d for d in trovati if d.id == scelto), None)
+
     def _ricostruisci(self) -> bool:
         """Rilegge il dispositivo della centrale. True se la mappa e' cambiata."""
-        dispositivo = dr.async_get(self.hass).async_get_device(
-            identifiers={IDENTIFICATIVO_CENTRALE}
-        )
+        dispositivo = self._dispositivo_centrale()
 
         if dispositivo is None:
             nuova = mappa_vuota()

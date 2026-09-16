@@ -34,6 +34,29 @@ _SCHEMA_TOPIC_RIFIUTO = re.compile(r"^tecnoalarm/programma/(\d+)/rifiuto$")
 
 
 @dataclass(frozen=True)
+class Candidato:
+    """Un dispositivo che ha l'identificativo della centrale."""
+
+    id: str
+    domini: frozenset[str]
+
+
+def scegli_centrale(candidati: Iterable[Candidato]) -> str | None:
+    """L'id del dispositivo della centrale fra quelli con lo stesso identificativo.
+
+    Da Home Assistant 2026.9 lo stesso identificativo puo' appartenere a piu'
+    integrazioni, e la vecchia ricerca che ne restituiva uno solo e' deprecata.
+    La centrale la crea MQTT: si preferisce quel dispositivo, e a parita' si
+    prende il primo in ordine di id, per non cambiare scelta a ogni riavvio.
+    """
+    tutti = list(candidati)
+    if not tutti:
+        return None
+    da_mqtt = [c for c in tutti if "mqtt" in c.domini]
+    return sorted(da_mqtt or tutti, key=lambda c: c.id)[0].id
+
+
+@dataclass(frozen=True)
 class Voce:
     """Una voce del registro entita', ridotta a cio' che serve qui."""
 

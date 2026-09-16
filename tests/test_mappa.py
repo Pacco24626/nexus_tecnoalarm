@@ -16,12 +16,14 @@ sys.path.insert(
 
 try:
     from mappa import (
+        Candidato,
         Voce,
         classifica,
         con_rifiuto,
         mappa_vuota,
         numero_da_topic,
         pulisci_rifiuto,
+        scegli_centrale,
     )
 except ImportError as errore:
     print(f"Errore di importazione: {errore}")
@@ -158,6 +160,20 @@ verifica("il vecchio stato conserva il ts di prima",
 
 rifiuti = con_rifiuto(rifiuti, 3, rifiuto_1)
 verifica("un altro programma non cancella il primo", set(rifiuti) == {"1", "3"}, rifiuti)
+
+# --- 10. quale dispositivo e' la centrale (HA 2026.9) -------------------------
+# Dal 2026.9 lo stesso identificativo puo' appartenere a piu' integrazioni.
+mqtt = Candidato(id="dev_mqtt", domini=frozenset({"mqtt"}))
+altro = Candidato(id="dev_altro", domini=frozenset({"nexus_tecnoalarm"}))
+terzo = Candidato(id="aaa_terzo", domini=frozenset({"template"}))
+
+verifica("nessun candidato: nessuna centrale", scegli_centrale([]) is None)
+verifica("un solo candidato", scegli_centrale([altro]) == "dev_altro")
+verifica("si preferisce il dispositivo di MQTT", scegli_centrale([terzo, altro, mqtt]) == "dev_mqtt")
+verifica("senza MQTT, il primo in ordine di id",
+         scegli_centrale([altro, terzo]) == "aaa_terzo")
+verifica("due di MQTT: scelta stabile, non a caso",
+         scegli_centrale([Candidato("b", frozenset({"mqtt"})), Candidato("a", frozenset({"mqtt"}))]) == "a")
 
 # --- esito -------------------------------------------------------------------
 falliti = [e for e in esiti if not e[1]]
