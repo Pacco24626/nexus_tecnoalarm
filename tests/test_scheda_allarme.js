@@ -154,9 +154,16 @@ function stato(entity_id, valore, attributi = {}) {
   return { entity_id, state: valore, attributes: attributi, last_updated: `t${++orologioStati}` };
 }
 
+// Il gateway pubblica l'azzeramento memorie dalla V0.8.55: con i gateway
+// vecchi le due chiavi non ci sono proprio.
+let memorieNellaMappa = false;
+
 function statoMappa(rifiuti = {}) {
   return stato(MAPPA, "5", {
     ruolo: "mappa_allarme",
+    ...(memorieNellaMappa
+      ? { azzera_memorie: "button.azzera_memorie", memorie: "binary_sensor.memorie" }
+      : {}),
     dispositivo_trovato: true,
     programmi: [TOTALE, NOTTE],
     zone: [
@@ -170,8 +177,9 @@ function statoMappa(rifiuti = {}) {
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie }) {
   timer.length = 0;
+  memorieNellaMappa = memorie !== undefined;
   const chiamate = [];
   const scheda = new Scheda();
   const casa = {
@@ -186,12 +194,39 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
     },
   };
 
+  if (memorie !== undefined) {
+    casa.stati["binary_sensor.memorie"] = stato("binary_sensor.memorie", memorie, { device_class: "problem" });
+    casa.stati["button.azzera_memorie"] = stato("button.azzera_memorie", "unknown");
+  }
+
+  // Il registro eventi: entita' con un identificativo qualunque, perche' la
+  // scheda deve trovarla dall'attributo 'ruolo' e non dal nome. Accanto, due
+  // esche: un'altra entita' con un attributo 'eventi' (come il cancello Nice,
+  // che su un impianto vero c'e' davvero) e la mappa stessa.
+  if (registro) {
+    casa.stati["sensor.un_nome_qualunque"] = stato(
+      "sensor.un_nome_qualunque",
+      registro.stato === undefined ? (registro.eventi || [])[0] || "" : registro.stato,
+      {
+        ruolo: "registro_eventi",
+        eventi: registro.eventi || [],
+        totale: registro.totale,
+        aggiornato: registro.aggiornato,
+      }
+    );
+    casa.stati["sensor.cancello_registro"] = stato("sensor.cancello_registro", "x", {
+      ruolo: "mappa_cancello",
+      eventi: ["non sono io"],
+    });
+  }
+
   const pubblica = () => {
     scheda.hass = {
       states: { ...casa.stati },
       formatEntityState: (s) => s.state,
-      callService: async (dominio, servizio, dati) => {
-        chiamate.push({ dominio, servizio, dati });
+      callService: async (dominio, servizio, dati, bersaglio) => {
+        // Il bersaglio conta: i pulsanti ricevono l'entita' li', non nei dati.
+        chiamate.push({ dominio, servizio, dati, bersaglio });
         if (gateway) return gateway({ dominio, servizio, dati, casa, cambia, rifiuta });
         return undefined;
       },
@@ -388,7 +423,152 @@ async function prove() {
     verifica("allarme generale spento: fascia nascosta", scheda._el.banner.hidden === true);
   }
 
-  // 14. mappa senza centrale
+  // 14. registro eventi
+  {
+    // Gateway piu' vecchio della V0.8.54: l'entita' non esiste e il blocco non
+    // si vede, ma la scheda funziona come prima.
+    const { scheda } = prepara({});
+    verifica("registro assente: blocco nascosto e scheda viva",
+      scheda._idRegistro === null && scheda._el.registro.sezione.hidden === true
+      && scheda._el.programmi.size === 2,
+      `id=${scheda._idRegistro}`);
+  }
+  {
+    const EVENTI = [
+      "07/10/26 07:09:13 Disin.  Utente 1 [GIOVANNI] Program. 2 [NOTTE] Monitor",
+      "06/10/26 22:38:38 Accesso Disp. TCPIP",
+      "06/10/26 20:41:45 Inser.  Utente 1 [GIOVANNI] Program. 2 [NOTTE] Tastiera 1",
+      "riga senza data, come non dovrebbe mai arrivare",
+    ];
+    const { scheda } = prepara({
+      registro: { eventi: EVENTI, totale: 312, aggiornato: "2026-10-07T19:43:35.342Z" },
+    });
+    const voce = scheda._el.registro;
+    verifica("registro trovato dall'attributo, non dal nome dell'entita'",
+      scheda._idRegistro === "sensor.un_nome_qualunque", String(scheda._idRegistro));
+    verifica("registro: blocco visibile", voce.sezione.hidden === false);
+
+    const righe = voce.lista.figli.filter((n) => n.className === "evento");
+    verifica("registro: una riga per evento, nell'ordine ricevuto", righe.length === 4, String(righe.length));
+
+    const pezzi = (riga) => riga.tutti().filter((n) => ["data", "ora", "cosa"].includes(n.className))
+      .map((n) => n.textContent);
+    verifica("registro: data e ora separate dalla descrizione, che resta com'e'",
+      JSON.stringify(pezzi(righe[0])) === JSON.stringify([
+        "07/10/26", "07:09:13", "Disin.  Utente 1 [GIOVANNI] Program. 2 [NOTTE] Monitor",
+      ]), JSON.stringify(pezzi(righe[0])));
+    verifica("registro: riga senza data mostrata tutta come descrizione",
+      JSON.stringify(pezzi(righe[3])) === JSON.stringify([
+        "", "", "riga senza data, come non dovrebbe mai arrivare",
+      ]), JSON.stringify(pezzi(righe[3])));
+
+    const icone = righe.map((r) => r.tutti().find((n) => n.className === "icona-evento").attributi.icon);
+    verifica("registro: icona dalla prima parola, generica per il resto",
+      JSON.stringify(icone) === JSON.stringify([
+        "mdi:shield-off-outline", "mdi:account-key", "mdi:shield-lock", "mdi:information-outline",
+      ]), JSON.stringify(icone));
+
+    verifica("registro: «ultimi 4 di 312» quando il gateway ne ha di piu'",
+      voce.conteggio.textContent === "ultimi 4 di 312", voce.conteggio.textContent);
+    verifica("registro: la nota rimanda alla Dashboard del gateway",
+      voce.nota.textContent.includes("Dashboard del gateway"), voce.nota.textContent);
+  }
+  {
+    const { scheda } = prepara({ registro: { eventi: ["07/10/26 07:09:13 Disin.  Utente 1"], totale: 1 } });
+    verifica("registro: con un evento solo si dice «1 evento»",
+      scheda._el.registro.conteggio.textContent === "1 evento",
+      scheda._el.registro.conteggio.textContent);
+  }
+  {
+    const { scheda } = prepara({ registro: { eventi: [], totale: 0 } });
+    const voce = scheda._el.registro;
+    verifica("registro vuoto: lo dice e spiega perche' puo' esserlo",
+      voce.conteggio.textContent === "nessun evento"
+      && voce.lista.textContent.includes("entro un minuto"),
+      `${voce.conteggio.textContent} | ${voce.lista.textContent}`);
+  }
+  {
+    const { scheda } = prepara({ registro: { eventi: [], stato: "unavailable" } });
+    verifica("registro non disponibile: non si finge che sia vuoto",
+      scheda._el.registro.conteggio.textContent === "non disponibile",
+      scheda._el.registro.conteggio.textContent);
+  }
+
+  // 15. memorie di allarme
+  {
+    const { scheda } = prepara({});
+    verifica("gateway senza azzeramento: blocco memorie nascosto",
+      scheda._el.memorie.sezione.hidden === true);
+  }
+  {
+    const { scheda } = prepara({ memorie: "off" });
+    const m = scheda._el.memorie;
+    verifica("spia spenta: blocco visibile e scritta «nessuna»",
+      m.sezione.hidden === false && m.stato.textContent === "nessuna", m.stato.textContent);
+    verifica("spia spenta: il pulsante resta premibile",
+      m.bottone.disabled === false);
+  }
+  {
+    const { scheda } = prepara({ memorie: "on" });
+    const m = scheda._el.memorie;
+    verifica("spia accesa: «presenti», in tono di attenzione",
+      m.stato.textContent === "presenti" && m.stato.dataset.tono === "attenzione"
+      && m.sezione.dataset.memorie === "si",
+      `${m.stato.textContent} ${m.stato.dataset.tono} ${m.sezione.dataset.memorie}`);
+  }
+  {
+    const { scheda } = prepara({ memorie: "unavailable" });
+    verifica("spia non disponibile: lo dice e lascia premere",
+      scheda._el.memorie.stato.textContent === "spia non disponibile"
+      && scheda._el.memorie.bottone.disabled === false,
+      scheda._el.memorie.stato.textContent);
+  }
+  {
+    // Si preme: prima la conferma, nessun comando.
+    const { scheda, chiamate } = prepara({ memorie: "on" });
+    scheda._el.memorie.bottone.click();
+    verifica("azzeramento: prima la domanda, nessun comando",
+      scheda._el.velo.hidden === false && chiamate.length === 0, String(chiamate.length));
+    const testo = scheda._el.velo.textContent;
+    verifica("la domanda dice quali memorie NON cadono",
+      /manomissione, errore e guasto/.test(testo) && /codice installatore/.test(testo),
+      testo.slice(0, 80));
+    bottoni(scheda).find((b) => b.textContent === "Annulla").click();
+    verifica("annullato: velo chiuso e nessun comando",
+      scheda._el.velo.hidden === true && chiamate.length === 0);
+  }
+  {
+    const { scheda, chiamate } = prepara({ memorie: "on" });
+    scheda._el.memorie.bottone.click();
+    bottoni(scheda).find((b) => b.textContent === "Azzera").click();
+    await svuota();
+    verifica("confermato: button.press sul pulsante del gateway",
+      chiamate.length === 1 && chiamate[0].dominio === "button"
+      && chiamate[0].servizio === "press"
+      && chiamate[0].bersaglio.entity_id === "button.azzera_memorie",
+      JSON.stringify(chiamate));
+    verifica("confermato: si dice solo «comando inviato»",
+      messaggio(scheda) === "Comando inviato", messaggio(scheda));
+
+    // La spia si spegne: solo adesso si puo' dire che sono state azzerate.
+    scheda.hass = {
+      ...scheda._hass,
+      states: { ...scheda._hass.states, "binary_sensor.memorie": stato("binary_sensor.memorie", "off") },
+    };
+    verifica("spia che si spegne: «memorie azzerate»",
+      messaggio(scheda) === "Memorie azzerate", messaggio(scheda));
+  }
+  {
+    // Spia gia' spenta: non si annuncia un successo che non si puo' vedere.
+    const { scheda, chiamate } = prepara({ memorie: "off" });
+    scheda._el.memorie.bottone.click();
+    bottoni(scheda).find((b) => b.textContent === "Azzera").click();
+    await svuota();
+    verifica("spia gia' spenta: comando mandato ma nessun annuncio di successo",
+      chiamate.length === 1 && messaggio(scheda) === "Comando inviato", messaggio(scheda));
+  }
+
+  // 16. mappa senza centrale
   {
     timer.length = 0;
     const scheda = new Scheda();

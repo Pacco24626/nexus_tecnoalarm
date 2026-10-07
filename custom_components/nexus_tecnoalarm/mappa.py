@@ -25,6 +25,18 @@ from dataclasses import dataclass
 from typing import Any
 
 ID_ALLARME_GENERALE = "tec_gen_alarm_v30"
+ID_AZZERA_MEMORIE = "tec_azzera_memorie"
+ID_MEMORIE = "tec_memorie"
+
+# Le entita' singole della centrale: un unique_id fisso ciascuna, nessun numero.
+# Vanno nella mappa perche' la card non puo' cercarle da sola — il registro
+# entita' non lo vede chi non e' amministratore, e sul dispositivo della
+# centrale il sensore delle memorie e' uno di trenta sensori binari.
+_ID_SINGOLE = {
+    ID_ALLARME_GENERALE: "allarme_generale",
+    ID_AZZERA_MEMORIE: "azzera_memorie",
+    ID_MEMORIE: "memorie",
+}
 
 _SCHEMA = re.compile(r"^tec_([zpt])_(\d+)_v\d+$")
 _SEZIONI = {"z": "zone", "p": "programmi", "t": "telecomandi"}
@@ -75,6 +87,8 @@ def mappa_vuota() -> dict[str, Any]:
         "zone": [],
         "telecomandi": [],
         "allarme_generale": None,
+        "azzera_memorie": None,
+        "memorie": None,
     }
 
 
@@ -118,13 +132,16 @@ def classifica(voci: Iterable[Voce], nomi_dispositivo: Iterable[str] = ()) -> di
         "zone": [],
         "telecomandi": [],
         "allarme_generale": None,
+        "azzera_memorie": None,
+        "memorie": None,
     }
 
     for voce in voci:
         if voce.disabilitata:
             continue
-        if voce.unique_id == ID_ALLARME_GENERALE:
-            risultato["allarme_generale"] = voce.entity_id
+        chiave = _ID_SINGOLE.get(voce.unique_id or "")
+        if chiave is not None:
+            risultato[chiave] = voce.entity_id
             continue
 
         corrispondenza = _SCHEMA.match(voce.unique_id or "")

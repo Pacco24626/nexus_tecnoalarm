@@ -97,6 +97,43 @@ mappa = classifica([Voce("binary_sensor.z1", "tec_z_1_v30", None, "Z")], DISPOSI
 verifica("senza allarme generale la chiave vale None", mappa["allarme_generale"] is None)
 verifica("mappa vuota: dispositivo non trovato", mappa_vuota()["dispositivo_trovato"] is False)
 
+# --- 5-bis. azzeramento delle memorie (gateway V0.8.55) ----------------------
+# Le due entita' stanno sul dispositivo della centrale ma non seguono lo schema
+# numerato: senza un ramo loro il filtro le scarterebbe in silenzio, e la card
+# non avrebbe modo di trovarle.
+voci = [
+    Voce("binary_sensor.z1", "tec_z_1_v30", None, "Zona 1"),
+    Voce("button.azzera", "tec_azzera_memorie", None, "Azzera memorie di allarme"),
+    Voce("binary_sensor.memorie", "tec_memorie", None, "Memorie di allarme"),
+]
+mappa = classifica(voci, DISPOSITIVO)
+verifica(
+    "pulsante e spia delle memorie riconosciuti",
+    mappa["azzera_memorie"] == "button.azzera" and mappa["memorie"] == "binary_sensor.memorie",
+    (mappa["azzera_memorie"], mappa["memorie"]),
+)
+verifica(
+    "la spia delle memorie non finisce fra le zone",
+    [z["entity_id"] for z in mappa["zone"]] == ["binary_sensor.z1"],
+    mappa["zone"],
+)
+mappa = classifica([Voce("binary_sensor.z1", "tec_z_1_v30", None, "Z")], DISPOSITIVO)
+verifica(
+    "gateway senza azzeramento: le due chiavi ci sono e valgono None",
+    mappa["azzera_memorie"] is None and mappa["memorie"] is None,
+)
+vuota = mappa_vuota()
+verifica(
+    "mappa vuota: le due chiavi ci sono lo stesso",
+    "azzera_memorie" in vuota and "memorie" in vuota
+    and vuota["azzera_memorie"] is None and vuota["memorie"] is None,
+    sorted(vuota),
+)
+mappa = classifica(
+    [Voce("button.azzera", "tec_azzera_memorie", None, "Azzera", disabilitata=True)], DISPOSITIVO
+)
+verifica("pulsante disabilitato: resta fuori dalla mappa", mappa["azzera_memorie"] is None)
+
 # --- 6. la centrale piu' grande ----------------------------------------------
 # Una TP20-440 arriva a 440 zone. Le voci arrivano nell'ordine del registro,
 # che non e' quello di programmazione.

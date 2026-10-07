@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.2.2";
+const VERSIONE_SCHEDA = "2.4.0";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -28,6 +28,28 @@ const SCADENZA_CODICE_MS = 30000;
 const ATTESA_INSERIMENTO_MS = 6000;
 
 const MAX_CIFRE = 12;
+
+/** Il registro eventi e' un'entita' a parte del gateway (V0.8.54 e successivi).
+ * Si riconosce da questo attributo: l'identificativo dipende dal nome del
+ * dispositivo e l'utente puo' rinominarlo, e una card con i permessi di chi
+ * guarda non vede gli unique_id. */
+const RUOLO_REGISTRO = "registro_eventi";
+
+/** Quanto si aspetta che la spia delle memorie si spenga, dopo l'azzeramento.
+ * Il gateway non manda un esito: la risposta e' la spia. Passato questo tempo
+ * si smette di guardare, senza dire ne' riuscito ne' fallito. */
+const ATTESA_MEMORIE_MS = 15000;
+const MAX_EVENTI = 50;
+
+/** Un'icona per tipo di evento, dalla prima parola e nient'altro: la descrizione
+ * la scrive la centrale, con spaziatura irregolare e nel suo vocabolario. */
+const ICONE_EVENTO = [
+  [/^inser/i, "mdi:shield-lock"],
+  [/^disin/i, "mdi:shield-off-outline"],
+  [/^allarm/i, "mdi:alarm-light"],
+  [/^access/i, "mdi:account-key"],
+];
+const ICONA_EVENTO = "mdi:information-outline";
 
 const TESTI_ESITO = {
   codice_errato: "Codice errato",
@@ -64,6 +86,8 @@ const STILE = `
   [hidden] { display: none !important; }
 
   ha-card {
+    /* Il velo della conferma si appoggia qui dentro. */
+    position: relative;
     --fondo-tenue: color-mix(in srgb, var(--primary-text-color) 5%, var(--card-background-color, #fff));
     --bordo-tenue: color-mix(in srgb, var(--primary-text-color) 14%, var(--card-background-color, #fff));
     --tasto-fondo: color-mix(in srgb, var(--primary-text-color) 12%, var(--card-background-color, #fff));
@@ -290,6 +314,100 @@ const STILE = `
   .bandierina[data-tono="allarme"] { background: var(--allarme); color: #fff; }
   .bandierina[data-tono="attenzione"] { background: var(--attenzione); color: #2a1c02; }
 
+  /* --- Registro eventi ---------------------------------------------------- */
+  .registro-blocco summary {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .registro-blocco summary::-webkit-details-marker { display: none; }
+  .registro-blocco summary::after {
+    content: "";
+    width: 7px; height: 7px;
+    border-right: 2px solid var(--secondary-text-color);
+    border-bottom: 2px solid var(--secondary-text-color);
+    transform: rotate(45deg) translateY(-2px);
+    transition: transform .2s ease;
+  }
+  .registro-blocco[open] summary::after { transform: rotate(-135deg) translateY(-2px); }
+  .registro { display: flex; flex-direction: column; margin-top: 10px; }
+  .evento {
+    display: grid;
+    grid-template-columns: 22px 78px 1fr;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 2px;
+    border-top: 1px solid var(--bordo-tenue);
+  }
+  .evento:first-child { border-top: none; }
+  .icona-evento { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+  .quando { display: flex; flex-direction: column; line-height: 1.2; }
+  .quando .data { font-size: 12px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  .quando .ora { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .evento .cosa { font-size: 13px; line-height: 1.35; word-break: break-word; }
+  .nota-registro { font-size: 11px; color: var(--secondary-text-color); padding: 8px 2px 0; }
+
+  /* --- Memorie di allarme -------------------------------------------------- */
+  .azzera {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-text-color);
+    background: var(--tasto-fondo);
+    border: 1px solid var(--tasto-bordo);
+  }
+  .azzera:hover { background: var(--tasto-premuto); }
+  .azzera ha-icon { --mdc-icon-size: 20px; }
+  .blocco[data-memorie="si"] .azzera { border-color: var(--attenzione); color: var(--attenzione); }
+  .conteggio[data-tono="attenzione"] { color: var(--attenzione); font-weight: 700; }
+
+  /* --- Conferma ------------------------------------------------------------ */
+  .velo {
+    /* fixed e non absolute: la scheda e' piu' alta dello schermo, e un dialogo
+       centrato su di lei finirebbe fuori vista. Centrato sulla finestra si
+       vede sempre, da qualunque punto si sia premuto. */
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(31, 41, 51, .4);
+    z-index: 3;
+  }
+  .dialogo {
+    max-width: 340px;
+    padding: 18px;
+    border-radius: 14px;
+    background: var(--card-background-color, #fff);
+    color: var(--primary-text-color);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+  }
+  .dialogo h5 { margin: 0 0 10px; font-size: 16px; }
+  .dialogo p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--secondary-text-color); }
+  .azioni-dialogo { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .azioni-dialogo button {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--primary-text-color);
+    background: var(--tasto-fondo);
+    border: 1px solid var(--tasto-bordo);
+  }
+  .azioni-dialogo button.pericolo { color: var(--allarme); border-color: var(--allarme); }
+
   .vuoto { font-size: 13px; color: var(--secondary-text-color); padding: 4px 2px; }
   .avviso { padding: 16px; color: var(--error-color, #cf3b30); line-height: 1.4; }
 
@@ -360,6 +478,27 @@ function bandierineDi(attributi) {
 }
 
 /** Messaggio leggibile da un errore di callService. */
+/** Spezza una riga del registro in data, ora e descrizione.
+ *
+ * I primi 17 caratteri sono GG/MM/AA hh:mm:ss: quelli si tagliano con
+ * sicurezza. La descrizione NON si analizza — spaziatura irregolare, nomi
+ * programmati sulla centrale, vocabolario che dipende dalla lingua del
+ * firmware: si mostra com'e'. Se la riga non comincia con una data si mostra
+ * tutta come descrizione, invece di indovinare.
+ */
+function spezzaEvento(riga) {
+  const testo = String(riga == null ? "" : riga);
+  if (!/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}/.test(testo)) {
+    return { data: "", ora: "", descrizione: testo.trim() };
+  }
+  return { data: testo.slice(0, 8), ora: testo.slice(9, 17), descrizione: testo.slice(18).trim() };
+}
+
+function iconaEvento(descrizione) {
+  for (const [parola, icona] of ICONE_EVENTO) if (parola.test(descrizione)) return icona;
+  return ICONA_EVENTO;
+}
+
 function testoErrore(errore) {
   const testo = (errore && (errore.message || errore.error || errore.code)) || String(errore);
   // Con il gateway precedente alla V0.8.31 e' ancora Home Assistant a
@@ -459,6 +598,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       return;
     }
 
+    // Il registro eventi arriva dal gateway V0.8.54: prima non esiste, e la
+    // scheda deve funzionare lo stesso. Si cerca a ogni giro perche' puo'
+    // comparire dopo un aggiornamento del gateway, senza ricaricare la pagina.
+    this._idRegistro = this._trovaRegistro();
+
     // La struttura cambia raramente (una zona aggiunta, un nome modificato):
     // solo allora si ricostruisce, altrimenti si aggiorna sul posto.
     const struttura = JSON.stringify([
@@ -466,6 +610,8 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       mappa.zone,
       mappa.telecomandi,
       mappa.allarme_generale,
+      mappa.azzera_memorie,
+      Boolean(this._idRegistro),
     ]);
     if (struttura !== this._firmaStruttura || !this._el) {
       this._costruisci(mappa);
@@ -488,12 +634,31 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._disegnaTastierino(mappa);
     this._disegnaZone(mappa);
     this._disegnaTelecomandi(mappa);
+    this._disegnaMemorie(mappa);
+    this._disegnaRegistro();
+  }
+
+  /** L'entita' del registro, cercata per attributo e non per identificativo. */
+  _trovaRegistro() {
+    const stati = this._hass.states;
+    const precedente = this._idRegistro && stati[this._idRegistro];
+    if (precedente && precedente.attributes && precedente.attributes.ruolo === RUOLO_REGISTRO) {
+      return this._idRegistro;
+    }
+    for (const id of Object.keys(stati)) {
+      if (!id.startsWith("sensor.")) continue;
+      const attributi = stati[id].attributes;
+      if (attributi && attributi.ruolo === RUOLO_REGISTRO) return id;
+    }
+    return null;
   }
 
   _firmaStatiCorrente(mappa) {
     const id = [
       this._config.entity,
       mappa.allarme_generale,
+      mappa.memorie,
+      this._idRegistro,
       ...(mappa.programmi || []).map((p) => p.entity_id),
       ...(mappa.zone || []).map((z) => z.entity_id),
       ...(mappa.telecomandi || []).map((t) => t.entity_id),
@@ -539,6 +704,9 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     card.appendChild(this._costruisciTastierino(mappa));
     card.appendChild(this._costruisciZone(mappa));
     card.appendChild(this._costruisciTelecomandi(mappa));
+    card.appendChild(this._costruisciMemorie(mappa));
+    card.appendChild(this._costruisciRegistro());
+    card.appendChild(this._costruisciConferma());
 
     this._radice.appendChild(card);
     this._firmaDisinseribili = null;
@@ -680,6 +848,66 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       el("div", { classe: "intestazione" }, [el("h3", { testo: "Telecomandi" })]),
       griglia,
     ]);
+  }
+
+  _costruisciMemorie(mappa) {
+    // Il pulsante resta premibile anche a spia spenta: la spia non copre tutte
+    // le memorie (restano fuori codice o chiave falsa e i collegamenti LAN e
+    // GSM), quindi spegnerlo impedirebbe un azzeramento legittimo.
+    const stato = el("span", { classe: "conteggio" });
+    const bottone = el(
+      "button",
+      { classe: "azzera", type: "button", onclick: () => this._chiediAzzeraMemorie() },
+      [el("ha-icon", { icon: "mdi:bell-off-outline" }), el("span", { testo: "Azzera memorie" })]
+    );
+    const sezione = el("section", { classe: "blocco", hidden: !mappa.azzera_memorie }, [
+      el("div", { classe: "intestazione" }, [el("h3", { testo: "Memorie di allarme" }), stato]),
+      bottone,
+    ]);
+    this._el.memorie = { sezione, stato, bottone };
+    return sezione;
+  }
+
+  /** Il velo della conferma: creato una volta e nascosto, non si aggiunge e
+   * toglie dal documento a ogni pressione. */
+  _costruisciConferma() {
+    const chiudi = (conferma) => {
+      this._el.velo.hidden = true;
+      if (conferma) this._azzeraMemorie();
+    };
+    const velo = el("div", { classe: "velo", hidden: true, onclick: (evento) => {
+      if (evento && evento.target === velo) chiudi(false);
+    } }, [
+      el("div", { classe: "dialogo", role: "dialog", "aria-modal": "true" }, [
+        el("h5", { testo: "Azzerare le memorie di allarme?" }),
+        el("p", { testo: "Si azzerano allarme di zona e di programma, batteria, rete elettrica, codice o chiave falsa, collegamenti LAN e GSM." }),
+        el("p", { testo: "Non si azzerano manomissione, errore e guasto: quelle chiedono il codice installatore e si cancellano dalla tastiera della centrale." }),
+        el("p", { testo: "Gli eventi restano nel registro; le memorie a schermo e sulla tastiera no." }),
+        el("div", { classe: "azioni-dialogo" }, [
+          el("button", { classe: "annulla", type: "button", testo: "Annulla", onclick: () => chiudi(false) }),
+          el("button", { classe: "pericolo", type: "button", testo: "Azzera", onclick: () => chiudi(true) }),
+        ]),
+      ]),
+    ]);
+    this._el.velo = velo;
+    return velo;
+  }
+
+  _costruisciRegistro() {
+    // Richiudibile e chiuso: e' un archivio che si consulta, non uno stato da
+    // tenere d'occhio. Gli stati dell'impianto sono gia' nei blocchi sopra.
+    const conteggio = el("span", { classe: "conteggio" });
+    const lista = el("div", { classe: "registro" });
+    const nota = el("div", { classe: "nota-registro" });
+    const sezione = el("section", { classe: "blocco", hidden: true }, [
+      el("details", { classe: "registro-blocco" }, [
+        el("summary", {}, [el("h3", { testo: "Registro eventi" }), conteggio]),
+        lista,
+        nota,
+      ]),
+    ]);
+    this._el.registro = { sezione, conteggio, lista, nota };
+    return sezione;
   }
 
   // ---------------------------------------------------------------------
@@ -828,6 +1056,113 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       voce.tessera.toggleAttribute("data-assente", assente(stato));
       voce.tessera.disabled = assente(stato);
     }
+  }
+
+  _disegnaMemorie(mappa) {
+    const voce = this._el.memorie;
+    if (!voce) return;
+    voce.sezione.hidden = !mappa.azzera_memorie;
+    if (!mappa.azzera_memorie) return;
+
+    const spia = mappa.memorie && this._hass.states[mappa.memorie];
+    const accesa = Boolean(spia) && spia.state === "on";
+    voce.stato.textContent = !spia
+      ? ""
+      : assente(spia)
+        ? "spia non disponibile"
+        : accesa
+          ? "presenti"
+          : "nessuna";
+    voce.stato.dataset.tono = accesa ? "attenzione" : "";
+    voce.sezione.dataset.memorie = accesa ? "si" : "no";
+
+    // Non c'e' un esito: la risposta e' la spia che si spegne. Se era gia'
+    // spenta non si annuncia niente, perche' non c'e' niente da vedere.
+    if (this._attesaMemorie) {
+      if (!accesa) {
+        this._attesaMemorie = null;
+        this._mostra("Memorie azzerate", "ok");
+      } else if (Date.now() - this._attesaMemorie > ATTESA_MEMORIE_MS) {
+        this._attesaMemorie = null;
+      }
+    }
+  }
+
+  _chiediAzzeraMemorie() {
+    if (this._el && this._el.velo) this._el.velo.hidden = false;
+  }
+
+  _azzeraMemorie() {
+    const mappa = this._mappa();
+    const id = mappa.azzera_memorie;
+    if (!id) return;
+    const spia = mappa.memorie && this._hass.states[mappa.memorie];
+    // Si guarda la spia solo se era accesa: altrimenti non c'e' nessuna
+    // transizione da aspettare e dire «azzerate» sarebbe inventarselo.
+    this._attesaMemorie = spia && spia.state === "on" ? Date.now() : null;
+    this._mostra("Comando inviato", "neutro");
+    Promise.resolve(this._hass.callService("button", "press", {}, { entity_id: id })).catch(
+      (errore) => this._mostra(testoErrore(errore), "allarme")
+    );
+  }
+
+  _disegnaRegistro() {
+    const voce = this._el.registro;
+    if (!voce) return;
+    const stato = this._idRegistro && this._hass.states[this._idRegistro];
+    voce.sezione.hidden = !stato;
+    if (!stato) return;
+
+    const attributi = stato.attributes || {};
+    const eventi = Array.isArray(attributi.eventi) ? attributi.eventi : [];
+    const mostrati = Math.min(eventi.length, MAX_EVENTI);
+    const totale = Number(attributi.totale);
+
+    // «ultimi 50 di 312» solo quando il gateway ne ha davvero di piu': il suo
+    // archivio arriva a 500, l'attributo si ferma a 50.
+    voce.conteggio.textContent = !mostrati
+      ? (assente(stato) ? "non disponibile" : "nessun evento")
+      : Number.isFinite(totale) && totale > mostrati
+        ? `ultimi ${mostrati} di ${totale}`
+        : `${mostrati} ${mostrati === 1 ? "evento" : "eventi"}`;
+
+    voce.lista.innerHTML = "";
+    if (!mostrati) {
+      voce.lista.appendChild(
+        el("div", {
+          classe: "vuoto",
+          testo: assente(stato)
+            ? "Il gateway non sta pubblicando il registro."
+            : "Nessun evento. Dopo un riavvio del gateway l'elenco si ripopola entro un minuto.",
+        })
+      );
+    }
+    // L'ordine e' gia' quello giusto, dal piu' recente: non si riordina per data
+    // ricavata dalla stringa, che ha l'anno a due cifre e nessun secolo.
+    for (const riga of eventi.slice(0, MAX_EVENTI)) {
+      const { data, ora, descrizione } = spezzaEvento(riga);
+      voce.lista.appendChild(
+        el("div", { classe: "evento" }, [
+          el("ha-icon", { classe: "icona-evento", icon: iconaEvento(descrizione) }),
+          el("div", { classe: "quando" }, [
+            el("span", { classe: "data", testo: data }),
+            el("span", { classe: "ora", testo: ora }),
+          ]),
+          el("span", { classe: "cosa", testo: descrizione }),
+        ])
+      );
+    }
+
+    // Data e ora brevi: la riga sta su una riga sola anche in una colonna stretta.
+    const quando = attributi.aggiornato ? new Date(attributi.aggiornato) : null;
+    const breve = quando && !Number.isNaN(quando.getTime())
+      ? quando.toLocaleString(undefined, {
+          day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+        })
+      : "";
+    voce.nota.textContent = breve
+      ? `aggiornato ${breve} \u00b7 archivio completo nella Dashboard del gateway`
+      : "";
   }
 
   // ---------------------------------------------------------------------

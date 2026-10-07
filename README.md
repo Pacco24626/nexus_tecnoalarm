@@ -135,10 +135,82 @@ Quattro blocchi:
   guasto, batteria). Un filtro mostra solo quelle aperte, che su una centrale grande
   e' cio' che serve guardare prima di inserire.
 - **Telecomandi** — interruttori.
+- **Memorie di allarme** — la spia della centrale e il pulsante per azzerarle.
+- **Registro eventi** — gli ultimi 50 eventi della centrale, richiudibile e chiuso
+  all'apertura: è un archivio che si consulta, non uno stato da tenere d'occhio.
 
 Non si elenca niente a mano. La scheda legge le entita' che il gateway Nexus-T
 pubblica sul dispositivo *Centrale Tecnoalarm*: una zona aggiunta in programmazione
 compare da sola, e una tolta sparisce.
+
+### Le memorie di allarme
+
+Dalla 2.4.0, se il gateway le pubblica, la scheda mostra la spia delle memorie e un
+pulsante per azzerarle. **Serve il gateway Nexus-T V0.8.55 o successivo**; con uno
+più vecchio il blocco non compare.
+
+**Il pulsante resta premibile anche a spia spenta.** Non è una svista: la spia della
+centrale copre rete, batteria, memorie di zona e manomissioni, ma non copre codice o
+chiave falsa né i collegamenti LAN e GSM, che pure vengono azzerati. A spia spenta
+una memoria può esserci lo stesso, e bloccare il pulsante impedirebbe un azzeramento
+legittimo. La spia informa, non comanda.
+
+**Che cosa viene azzerato**, ed è scritto anche nella finestra di conferma: allarme di
+zona e di programma, batteria, rete elettrica, codice o chiave falsa, collegamenti LAN
+e GSM. **Non** manomissione, errore e guasto: quelle richiedono il codice installatore
+e si cancellano dalla tastiera della centrale. Gli eventi restano nel registro; le
+memorie a schermo e sulla tastiera no. L'azione non si annulla, per questo c'è la
+conferma.
+
+**L'esito non arriva dal gateway**, e la scheda non lo inventa: alla pressione dice
+«comando inviato» e solo se la spia era accesa e si spegne entro una quindicina di
+secondi aggiunge «memorie azzerate». Se la centrale è irraggiungibile il comando resta
+in coda sul gateway e parte quando la connessione torna: dalla scheda non si distingue,
+e per questo non viene annunciato nessun successo.
+
+Premere più volte non fa danni: le pressioni ravvicinate le assorbe il gateway.
+
+### Il registro eventi
+
+Dalla 2.3.0, se il gateway lo pubblica, la scheda mostra un quinto blocco con gli
+ultimi eventi letti dalla centrale: data e ora in una colonna, la descrizione
+com'è arrivata nell'altra, un'icona ricavata dalla prima parola (inserimento,
+disinserimento, accesso, allarme) e un ripiego generico per tutto il resto.
+
+**Serve il gateway Nexus-T V0.8.54 o successivo.** Con un gateway più vecchio
+l'entità non esiste, il blocco non compare e il resto della scheda funziona come
+prima: non c'è niente da configurare né da togliere.
+
+La scheda trova l'entità da sola, cercando l'attributo `ruolo: registro_eventi`.
+Non va indicata nella configurazione, e continua a funzionare anche se la si
+rinomina: l'identificativo dipende dal nome del dispositivo e non si può
+indovinare.
+
+La descrizione non viene interpretata. La scrive la centrale, con la sua
+spaziatura, i nomi programmati dall'installatore fra parentesi quadre e il
+vocabolario della lingua del firmware: cercare di estrarne «chi» e «cosa»
+funzionerebbe su un impianto e si romperebbe sul successivo. Per lo stesso motivo
+l'ordine è quello ricevuto dal gateway, dal più recente: l'anno è a due cifre e
+riordinare per data ricavata dalla stringa sarebbe un azzardo.
+
+Il gateway conserva fino a 500 eventi ma ne pubblica 50: quando sono di più la
+scheda scrive «ultimi 50 di N» e rimanda alla Dashboard del gateway, dove c'è
+l'archivio intero. L'aggiornamento avviene entro un minuto dall'evento.
+
+> [!TIP]
+> L'elenco viaggia in un attributo di qualche kilobyte, e Home Assistant archivia
+> gli attributi a ogni cambiamento. Su un impianto movimentato conviene escluderlo
+> dal registratore:
+>
+> ```yaml
+> recorder:
+>   exclude:
+>     entity_globs:
+>       - sensor.*ultimo_evento_centrale
+> ```
+>
+> Si perde lo storico nativo di quell'entità, non gli eventi: quelli stanno sulla
+> centrale e nella Dashboard del gateway.
 
 ### Perche' serve un sensore e non basta la card
 

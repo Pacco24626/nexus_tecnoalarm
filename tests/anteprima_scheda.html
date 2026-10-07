@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Anteprima scheda allarme</title>
+<!--
+  Guarda la scheda allarme in un browser vero, senza Home Assistant, per
+  giudicare l'aspetto prima di pubblicare. Non e' un collaudo: le prove sono in
+  tests/test_scheda_allarme.js.
+
+    apri questo file nel browser, oppure
+    node tests/foto_scheda.js   (salva una fotografia)
+
+  Gli eventi del registro sono righe vere, copiate da una centrale TP8-88.
+-->
+<style>
+  body { margin: 0; padding: 20px; background: #f1f3f6; font-family: Roboto, "Segoe UI", Arial, sans-serif; }
+  .colonna { width: 420px; }
+  :root {
+    --primary-text-color: #212121; --secondary-text-color: #727272;
+    --card-background-color: #fff; --divider-color: #e0e0e0;
+    --success-color: #2f9e52; --warning-color: #d99012; --error-color: #cf3b30;
+    --state-icon-color: #44739e;
+  }
+  ha-card { display: block; background: var(--card-background-color); border-radius: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+  ha-icon, ha-state-icon { display: inline-block; width: 22px; height: 22px; vertical-align: middle;
+            background: currentColor; opacity: .55; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="colonna" id="colonna"></div>
+<script src="../custom_components/nexus_tecnoalarm/www/nexus-tecnoalarm-allarme.js"></script>
+<script>
+(function () {
+  const MAPPA = "sensor.centrale_tecnoalarm_mappa_allarme";
+  const REGISTRO = "sensor.centrale_tecnoalarm_ultimo_evento_centrale";
+
+  // Righe vere di registro, da una centrale in esercizio.
+  const EVENTI = [
+    "07/10/26 07:09:13 Disin.  Utente 1 [GIOVANNI] Program. 2 [NOTTE] Monitor",
+    "06/10/26 22:38:38 Accesso Disp. TCPIP",
+    "06/10/26 22:38:38 Accesso Remoto  Livello 3Installatore",
+    "06/10/26 22:38:38 Accesso Disp.  3306",
+    "06/10/26 20:41:45 Inser.  Utente 1 [GIOVANNI] Program. 2 [NOTTE] Tastiera 1",
+    "06/10/26 20:41:29 Accesso  Utente 1 [GIOVANNI] Tastiera 1",
+    "06/10/26 11:44:16 Disin.  Utente 1 [GIOVANNI] Program. 3 [KINDER A CASA] Tastiera 1",
+  ];
+
+  const programmi = [
+    { numero: 1, entity_id: "alarm_control_panel.totale", nome: "Totale" },
+    { numero: 2, entity_id: "alarm_control_panel.notte", nome: "Notte" },
+    { numero: 3, entity_id: "alarm_control_panel.kinder", nome: "Kinder a casa" },
+    { numero: 4, entity_id: "alarm_control_panel.esterno", nome: "Esterno" },
+  ];
+  const zone = [
+    { numero: 1, entity_id: "binary_sensor.porta_ingresso", nome: "Porta ingresso" },
+    { numero: 2, entity_id: "binary_sensor.finestra_cucina", nome: "Finestra cucina" },
+    { numero: 3, entity_id: "binary_sensor.sensore_garage", nome: "Sensore garage" },
+  ];
+  const telecomandi = [{ numero: 1, entity_id: "switch.telecomando_1", nome: "Telecomando 1" }];
+
+  const stati = {
+    [MAPPA]: { entity_id: MAPPA, state: "4", last_updated: "1", attributes: {
+      ruolo: "mappa_allarme", dispositivo_trovato: true, programmi, zone, telecomandi,
+      allarme_generale: "binary_sensor.allarme", rifiuti: {},
+    } },
+    [REGISTRO]: { entity_id: REGISTRO, state: EVENTI[0], last_updated: "1", attributes: {
+      ruolo: "registro_eventi", eventi: EVENTI, totale: 312,
+      aggiornato: new Date(Date.now() - 4 * 60000).toISOString(),
+    } },
+    "binary_sensor.allarme": { entity_id: "binary_sensor.allarme", state: "off", last_updated: "1", attributes: {} },
+  };
+  for (const p of programmi) {
+    stati[p.entity_id] = { entity_id: p.entity_id, state: p.numero === 2 ? "armed_away" : "disarmed",
+      last_updated: "1", attributes: {} };
+  }
+  for (const z of zone) {
+    stati[z.entity_id] = { entity_id: z.entity_id, state: z.numero === 1 ? "on" : "off",
+      last_updated: "1", attributes: { device_class: z.numero === 2 ? "window" : "door" } };
+  }
+  for (const t of telecomandi) {
+    stati[t.entity_id] = { entity_id: t.entity_id, state: "off", last_updated: "1", attributes: {} };
+  }
+
+  const card = document.createElement("nexus-tecnoalarm-allarme");
+  card.setConfig({ entity: MAPPA });
+  document.getElementById("colonna").appendChild(card);
+  card.hass = { states: stati, formatEntityState: (s) => s.state, callService: async () => {} };
+
+  // Il registro e' richiudibile e nasce chiuso: per la fotografia lo si apre.
+  const dettagli = card.shadowRoot && card.shadowRoot.querySelector("details.registro-blocco");
+  if (dettagli) dettagli.open = true;
+})();
+</script>
+</body>
+</html>
