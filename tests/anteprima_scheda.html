@@ -36,6 +36,11 @@
   const MAPPA = "sensor.centrale_tecnoalarm_mappa_allarme";
   const REGISTRO = "sensor.centrale_tecnoalarm_ultimo_evento_centrale";
 
+  // Con ?gateway=vecchio si guarda la scheda come la vede chi ha un gateway
+  // precedente alla V0.8.54: niente entita' del registro, niente chiavi
+  // dell'azzeramento nella mappa. I due blocchi devono sparire senza rumore.
+  const VECCHIO = new URLSearchParams(location.search).get("gateway") === "vecchio";
+
   // Righe vere di registro, da una centrale in esercizio.
   const EVENTI = [
     "07/10/26 07:09:13 Disin.  Utente 1 [GIOVANNI] Program. 2 [NOTTE] Monitor",
@@ -64,6 +69,9 @@
     [MAPPA]: { entity_id: MAPPA, state: "4", last_updated: "1", attributes: {
       ruolo: "mappa_allarme", dispositivo_trovato: true, programmi, zone, telecomandi,
       allarme_generale: "binary_sensor.allarme", rifiuti: {},
+      ...(VECCHIO
+        ? { azzera_memorie: null, memorie: null }
+        : { azzera_memorie: "button.azzera_memorie", memorie: "binary_sensor.memorie" }),
     } },
     [REGISTRO]: { entity_id: REGISTRO, state: EVENTI[0], last_updated: "1", attributes: {
       ruolo: "registro_eventi", eventi: EVENTI, totale: 312,
@@ -81,6 +89,14 @@
   }
   for (const t of telecomandi) {
     stati[t.entity_id] = { entity_id: t.entity_id, state: "off", last_updated: "1", attributes: {} };
+  }
+
+  if (VECCHIO) delete stati[REGISTRO];
+  else {
+    stati["binary_sensor.memorie"] = { entity_id: "binary_sensor.memorie", state: "on",
+      last_updated: "1", attributes: { device_class: "problem" } };
+    stati["button.azzera_memorie"] = { entity_id: "button.azzera_memorie", state: "unknown",
+      last_updated: "1", attributes: {} };
   }
 
   const card = document.createElement("nexus-tecnoalarm-allarme");
