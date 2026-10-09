@@ -527,14 +527,25 @@ async function prove() {
 
   // 12. filtro delle zone aperte
   {
+    // Si parte dalle aperte, senza toccare niente.
     const { scheda } = prepara({ porta: "on" });
-    scheda._filtroZone = "aperte";
-    scheda._firmaStati = null;
-    scheda._aggiorna();
     const porta = scheda._el.zone.get("binary_sensor.porta").tessera;
     const finestra = scheda._el.zone.get("binary_sensor.finestra").tessera;
-    verifica("filtro «aperte»: la porta aperta resta, la finestra chiusa sparisce",
-      porta.hidden === false && finestra.hidden === true);
+    verifica("all'apertura si vedono solo le zone aperte",
+      scheda._filtroZone === "aperte" && porta.hidden === false && finestra.hidden === true,
+      scheda._filtroZone);
+    const tutte = bottoni(scheda).find((b) => b.textContent === "Tutte");
+    verifica("il tasto «Aperte» risulta quello premuto",
+      bottoni(scheda).find((b) => b.textContent === "Aperte").getAttribute("aria-pressed") === "true");
+    tutte.click();
+    verifica("premuto «Tutte» tornano tutte",
+      scheda._filtroZone === "tutte" && porta.hidden === false && finestra.hidden === false);
+  }
+  {
+    // Tutto chiuso: l'elenco e' vuoto e lo dice, invece di lasciare un buco.
+    const { scheda } = prepara({ porta: "off" });
+    verifica("tutto chiuso: si dice che non c'e' niente di aperto",
+      scheda._el.vuotoZone.hidden === false, "vuoto nascosto");
   }
 
   // 13. allarme in corso

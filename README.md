@@ -128,10 +128,11 @@ I blocchi:
 - **Programmi** — stato di ciascuno e un pulsante per riga: *Inserisci* se è
   disinserito (un tocco, senza codice), *Disinserisci* se è inserito. Sotto il nome,
   quando il gateway la pubblica, la riga delle zone aperte.
-- **Zone** — tutte, con l'icona che corrisponde al `device_class` dichiarato
+- **Zone** — con l'icona che corrisponde al `device_class` dichiarato
   dall'installatore e le segnalazioni estese della zona (esclusa, manomissione,
-  guasto, batteria). Un filtro mostra solo quelle aperte, che su una centrale grande
-  e' cio' che serve guardare prima di inserire.
+  guasto, batteria). **Si parte dalle sole zone aperte**: su una centrale grande
+  l'elenco intero è una parete di tessere uguali, e prima di inserire serve sapere
+  che cosa non è chiuso. Il tasto *Tutte* le mostra tutte.
 - **Telecomandi** — interruttori.
 - **Memorie di allarme** — la spia della centrale e il pulsante per azzerarle.
 - **Registro eventi** — gli ultimi 50 eventi della centrale, richiudibile e chiuso

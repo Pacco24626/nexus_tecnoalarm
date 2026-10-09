@@ -613,7 +613,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._radice = this.attachShadow({ mode: "open" });
     this._codice = "";
     this._occupato = false;
-    this._filtroZone = "tutte";
+    // Si parte dalle aperte: su una centrale da trenta zone l'elenco intero e'
+    // una parete di tessere tutte uguali, e cio' che serve prima di inserire e'
+    // sapere che cosa NON e' chiuso. «Tutte» resta a un tocco.
+    this._filtroZone = "aperte";
     this._inInserimento = new Set();
     this._attesa = null;
     this._messaggio = null;
