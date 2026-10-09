@@ -361,7 +361,7 @@ async function prove() {
     digita(scheda, "1234");
     await disinserisci(scheda, [TOTALE], 16000);
     verifica("rifiuto vecchio ignorato: si arriva al tempo scaduto",
-      messaggio(scheda) === "Nessuna risposta dalla centrale", messaggio(scheda));
+      messaggio(scheda) === "Nessuna conferma dalla centrale", messaggio(scheda));
   }
 
   // 4. «Tutto»: il primo passa, il secondo viene rifiutato
@@ -1025,6 +1025,45 @@ async function prove() {
     await avanza(1500);
     verifica("inserimento accettato: nessun dialogo e nessun allarme",
       scheda._el.velo.hidden === true && messaggio(scheda) === "", messaggio(scheda));
+  }
+
+  {
+    // Inserimento di cui non si sa niente: la centrale accetta la trama e non
+    // si inserisce, oppure la coda del gateway ha perso il comando. Dopo un
+    // 'accettato' non arriva piu' nulla (confermato dal gateway il 09/10), e
+    // nemmeno lo stato cambia. Si dice che non c'e' conferma, MAI «non
+    // inserito»: sono due cose diverse per chi le legge.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away",
+      gateway: ({ servizio, rifiuta }) => {
+        if (servizio === "alarm_arm_away") {
+          rifiuta(1, "accettato", 1600, { ok: true, messaggio: "Totale: comando accettato" });
+        }
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(2000);
+    verifica("accettato ma niente: a meta' attesa ancora nessun annuncio",
+      messaggio(scheda) === "", messaggio(scheda));
+    await avanza(20000);
+    verifica("scaduta l'attesa: «nessuna conferma», non «non inserito»",
+      messaggio(scheda) === "Totale: nessuna conferma dalla centrale", messaggio(scheda));
+  }
+  {
+    // Lo stesso inserimento, ma riuscito: la riga del programma lo dice gia',
+    // e un messaggio in piu' sarebbe rumore.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away",
+      gateway: ({ servizio, cambia }) => {
+        if (servizio === "alarm_arm_away") cambia(TOTALE.entity_id, "armed_away");
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(20000);
+    verifica("inserimento riuscito: nessun «nessuna conferma»",
+      messaggio(scheda) === "", messaggio(scheda));
   }
 
   // 18. lo scavalco, dentro il rifiuto e solo li'

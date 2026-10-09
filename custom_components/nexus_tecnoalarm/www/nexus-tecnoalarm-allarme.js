@@ -59,7 +59,10 @@ const ICONA_EVENTO = "mdi:information-outline";
 const TESTI_ESITO = {
   codice_errato: "Codice errato",
   comando_sconosciuto: "Comando non riconosciuto dal gateway",
-  timeout: "Nessuna risposta dalla centrale",
+  // «Nessuna risposta» direbbe che la centrale tace, e non e' detto: il
+  // comando puo' essere sparito prima, e in tutti i casi quello che sappiamo
+  // davvero e' solo che non ci e' tornata una conferma.
+  timeout: "Nessuna conferma dalla centrale",
 };
 
 const TESTI_PROGRAMMA = {
@@ -1576,9 +1579,34 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       numero: programma.numero,
       nome: programma.nome,
       tsPrima,
-      scadenza: setTimeout(() => this._chiudiInserimento(programma.entity_id), ATTESA_ESITO_MS),
+      scadenza: setTimeout(() => this._scadeInserimento(programma.entity_id), ATTESA_ESITO_MS),
     });
     this._verificaInserimenti();
+  }
+
+  /**
+   * Scaduta l'attesa di un inserimento, senza esito e senza cambio di stato.
+   *
+   * Non si scrive «non inserito». Dopo un 'accettato' il gateway non pubblica
+   * piu' niente (conferma loro, 09/10/2026), e ci sono tre modi in cui l'esito
+   * non arriva mai pur essendo il comando non eseguito: la centrale accetta la
+   * trama e l'inserimento non si completa; la coda del gateway supera le 200
+   * voci e scarta le piu' vecchie - cosa che capita proprio quando la centrale
+   * non risponde; Node-RED riparte e la coda, che sta in memoria, se ne va.
+   * In tutti e tre non sappiamo com'e' andata, e «non ho conferma» e «non
+   * inserito» per chi le legge sono due cose diverse.
+   */
+  _scadeInserimento(entityId) {
+    const attesa = this._attesiInserimento && this._attesiInserimento.get(entityId);
+    if (!attesa) return;
+    this._chiudiInserimento(entityId);
+
+    // Nel frattempo puo' essersi inserito davvero: allora non c'e' niente da
+    // dire, lo dice la riga del programma.
+    const stato = this._hass && this._hass.states[entityId];
+    if (stato && !assente(stato) && stato.state !== "disarmed") return;
+
+    this._mostra(`${attesa.nome}: nessuna conferma dalla centrale`, "attenzione");
   }
 
   _chiudiInserimento(entityId) {

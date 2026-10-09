@@ -314,8 +314,16 @@ avvenuto. I successi restano nella mappa, dove li legge la scheda.
 Nella scheda le frasi restano le nostre per gli esiti che conosce — *Codice errato*,
 *non inserito, 2 zone aperte: …* — e si usa il `messaggio` del gateway per quelli
 nati dopo questa versione della card, al posto del testo generico. Un esito con
-`ok: true` **non chiude l'attesa**: vuol dire che il gateway ha preso il comando, non
-che la centrale ha finito, e l'unica prova resta lo stato del programma.
+`ok: true` **non chiude l'attesa**: `accettato` è l'ACK della centrale sulla trama,
+non la prova che l'impianto sia inserito. Quella è e resta lo stato del programma.
+
+**Quando non arriva nessun esito la scheda dice «nessuna conferma dalla centrale», mai
+«non inserito».** Non è una sfumatura: ci sono tre modi in cui il comando non viene
+eseguito e nessuno lo dice — la centrale accetta la trama e l'inserimento non si
+completa; la coda del gateway supera le duecento voci e scarta le più vecchie, cosa
+che capita proprio quando la centrale non risponde; Node-RED riparte e la coda, che
+sta in memoria, se ne va. In nessuno dei tre sappiamo com'è andata, e per chi legge
+«non ho conferma» e «non è inserito» sono due cose diverse.
 
 Dal gateway V0.8.55 l'ultimo rifiuto sta anche **negli attributi del pannello** del
 programma (`esito`, `zone_aperte`, `ts`), leggibili con `state_attr` senza passare
