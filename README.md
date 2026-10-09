@@ -153,6 +153,12 @@ codice già digitato.
 Un tastierino sempre in vista occupava mezza scheda per un'operazione che si fa due
 volte al giorno, e stava lontano dalla riga del programma che si voleva spegnere.
 
+**Sul telefono la finestra prende tutto lo schermo** e i tasti diventano bersagli da
+un centimetro abbondante: in un riquadro centrato restavano sotto i 50 px e si
+sbagliava cifra. Le altre due finestre — conferma dell'azzeramento e rifiuto —
+restano riquadri centrati, perché una domanda da due righe a tutto schermo sarebbe
+sproporzionata.
+
 **La scheda non sa se il codice è giusto**: non esiste un comando che lo verifichi,
 la risposta la dà il gateway quando esegue. Per questo i pulsanti compaiono appena
 c'è un codice, e l'esito si legge dopo: riuscito, la finestra si chiude da sé e sotto

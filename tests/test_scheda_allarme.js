@@ -478,6 +478,18 @@ async function prove() {
       `${scheda._codice}/${chiamate.length}`);
   }
   {
+    // A tutto schermo solo il dialogo con il tastierino: una domanda da due
+    // righe presa a tutta pagina sarebbe sproporzionata.
+    const { scheda } = prepara({ totale: "armed_away", memorie: "on" });
+    apriDisinserimento(scheda);
+    verifica("il dialogo del codice chiede lo schermo intero",
+      scheda._el.dialogo.riquadro.classList.contains("pieno"));
+    azioneDialogo(scheda, "Annulla").click();
+    scheda._el.memorie.bottone.click();
+    verifica("la conferma delle memorie resta una finestrella",
+      scheda._el.dialogo.riquadro.classList.contains("pieno") === false);
+  }
+  {
     // Il tastierino non sta piu' nel corpo della scheda.
     const { scheda } = prepara({ totale: "armed_away" });
     verifica("niente tastierino fisso sotto i programmi",

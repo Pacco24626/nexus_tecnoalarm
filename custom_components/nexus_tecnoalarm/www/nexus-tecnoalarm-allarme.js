@@ -360,6 +360,44 @@ const STILE = `
   .dialogo .messaggio { margin-top: 10px; }
   .dialogo p.forte { color: var(--allarme); font-weight: 600; }
 
+  /* Sul telefono il dialogo del tastierino prende tutto lo schermo: in una
+     finestrella da 340 px i tasti diventano bersagli da 50 px e si sbaglia
+     cifra. Vale solo per quello: una domanda da due righe a tutto schermo
+     sarebbe sproporzionata, e infatti la classe la mette solo chi ha dentro
+     il tastierino. */
+  @media (max-width: 560px) {
+    .velo.pieno { padding: 0; }
+    .dialogo.pieno {
+      /* border-box: con il conteggio predefinito l'altezza 100% e' quella del
+         contenuto, e i 40 px di imbottitura finiscono fuori schermo portandosi
+         via «Annulla». */
+      box-sizing: border-box;
+      max-width: none;
+      width: 100%;
+      height: 100%;
+      border-radius: 0;
+      padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    /* Il tastierino al centro dell'altezza che avanza, e i tasti piu' alti:
+       il pollice di chi digita al buio non ha la mira del mouse. */
+    .dialogo.pieno .corpo-dialogo {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 14px;
+    }
+    .dialogo.pieno .codice { min-height: 60px; font-size: 28px; margin-bottom: 0; }
+    .dialogo.pieno .tastierino { max-width: 420px; gap: 12px; margin-bottom: 0; }
+    .dialogo.pieno .tasto { aspect-ratio: 1 / .78; font-size: 24px; }
+    .dialogo.pieno .tasto.piccolo { font-size: 18px; }
+    .dialogo.pieno .disinserimenti { gap: 10px; }
+    .dialogo.pieno .azioni-dialogo { margin-top: auto; padding-top: 14px; }
+  }
+
   /* --- Zone aperte per programma ------------------------------------------- */
   .zone-aperte { font-size: 12px; line-height: 1.35; }
   .zone-aperte[data-tono="aperte"] { color: var(--attenzione); font-weight: 600; }
@@ -401,6 +439,12 @@ const STILE = `
     z-index: 3;
   }
   .dialogo {
+    /* width E max-width. Con il solo max-width il riquadro si stringe sul
+       contenuto, e il tastierino dentro - che e' largo 100% del genitore -
+       si risolve sul minimo: tasti da 47x28, impossibili da centrare col
+       pollice. Con i paragrafi non si notava, perche' a tenerlo largo era
+       il testo. */
+    width: 100%;
     max-width: 340px;
     padding: 18px;
     border-radius: 14px;
@@ -953,21 +997,22 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     const corpo = el("div", { classe: "corpo-dialogo" });
     const messaggio = el("div", { classe: "messaggio", "aria-live": "assertive" });
     const azioni = el("div", { classe: "azioni-dialogo" });
+    const riquadro = el("div", { classe: "dialogo", role: "dialog", "aria-modal": "true" },
+      [titolo, corpo, messaggio, azioni]);
     const velo = el("div", { classe: "velo", hidden: true, onclick: (evento) => {
       // Solo il velo, non il riquadro: un tocco dentro il dialogo non lo chiude.
       if (evento && evento.target === velo) this._chiudiDialogo();
-    } }, [
-      el("div", { classe: "dialogo", role: "dialog", "aria-modal": "true" },
-        [titolo, corpo, messaggio, azioni]),
-    ]);
-    this._el.dialogo = { velo, titolo, corpo, messaggio, azioni };
+    } }, [riquadro]);
+    this._el.dialogo = { velo, riquadro, titolo, corpo, messaggio, azioni };
     this._el.velo = velo;
     return velo;
   }
 
-  _apriDialogo({ titolo, corpo = [], azioni = [], suChiusura = null }) {
+  _apriDialogo({ titolo, corpo = [], azioni = [], suChiusura = null, pieno = false }) {
     const d = this._el && this._el.dialogo;
     if (!d) return;
+    d.riquadro.classList.toggle("pieno", pieno);
+    d.velo.classList.toggle("pieno", pieno);
     d.titolo.textContent = titolo;
     d.corpo.replaceChildren(...corpo);
     d.azioni.replaceChildren(
@@ -1179,6 +1224,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._firmaDisinseribili = null;
     this._apriDialogo({
       titolo: "Disinserimento",
+      pieno: true,
       corpo: this._costruisciCorpoDisinserimento(),
       azioni: [{ etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() }],
       suChiusura: () => {
