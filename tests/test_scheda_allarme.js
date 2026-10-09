@@ -956,6 +956,65 @@ async function prove() {
     verifica("rifiuto vecchio: non si annuncia", messaggio(scheda) === "", messaggio(scheda));
   }
 
+  // 17-bis. esiti della V0.8.56 sull'argomento dei rifiuti
+  {
+    // Il gateway conferma di aver preso il comando mentre la centrale si
+    // disinserisce. Prima della 0.8.56 su quell'argomento passavano solo i
+    // fallimenti: letto alla vecchia maniera, un successo diventava
+    // «il gateway non ha eseguito il comando (accettato)».
+    const { scheda } = prepara({
+      gateway: ({ servizio, rifiuta, cambia }) => {
+        if (servizio !== "alarm_disarm") return;
+        rifiuta(1, "accettato", 1200, { ok: true, messaggio: "Totale: comando accettato" });
+        cambia(TOTALE.entity_id, "disarmed");
+      },
+    });
+    digita(scheda, "1234");
+    await disinserisci(scheda, [TOTALE], 2500);
+    verifica("esito con ok: il disinserimento riesce lo stesso",
+      messaggio(scheda) === "Disinserito", messaggio(scheda));
+  }
+  {
+    // Un esito nuovo che la scheda non conosce: si mostra la frase del gateway
+    // invece del testo generico con il nome in codice.
+    const { scheda } = prepara({
+      gateway: ({ rifiuta }) => rifiuta(1, "centrale_occupata", 1300,
+        { ok: false, messaggio: "La centrale e' occupata, riprova fra poco" }),
+    });
+    digita(scheda, "1234");
+    await disinserisci(scheda, [TOTALE]);
+    verifica("esito sconosciuto con messaggio: parla il gateway",
+      messaggio(scheda) === "La centrale e' occupata, riprova fra poco", messaggio(scheda));
+  }
+  {
+    // Le nostre frasi restano quelle tarate: il messaggio del gateway non
+    // scavalca un testo che conosciamo.
+    const { scheda } = prepara({
+      gateway: ({ rifiuta }) => rifiuta(1, "codice_errato", 1400,
+        { ok: false, messaggio: "Codice non valido (gateway)" }),
+    });
+    digita(scheda, "9999");
+    await disinserisci(scheda, [TOTALE]);
+    verifica("esito conosciuto: vince la frase della scheda",
+      messaggio(scheda) === "Codice errato", messaggio(scheda));
+  }
+  {
+    // Inserimento: la conferma del gateway non deve aprire il dialogo.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away", scavalco: true,
+      gateway: ({ servizio, rifiuta }) => {
+        if (servizio === "alarm_arm_away") {
+          rifiuta(1, "accettato", 1500, { ok: true, messaggio: "Totale inserito" });
+        }
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("inserimento accettato: nessun dialogo e nessun allarme",
+      scheda._el.velo.hidden === true && messaggio(scheda) === "", messaggio(scheda));
+  }
+
   // 18. lo scavalco, dentro il rifiuto e solo li'
   const rifiutaZone = (ts) => ({ servizio, rifiuta, cambia }) => {
     if (servizio === "alarm_arm_away") rifiuta(1, "zone_aperte", ts, { zone_aperte: ["FIN.BAGNO P.T."] });

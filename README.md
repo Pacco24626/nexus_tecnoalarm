@@ -297,8 +297,20 @@ actions:
 ```
 
 I campi dell'evento: `programma` (numero), `nome`, `azione` (`ARM` o `DISARM`),
-`esito`, `zone_aperte` (i nomi, al massimo 25), `numeri`, `entity_id` del pannello e
-`ts` del gateway.
+`esito`, `ok`, `messaggio`, `zone_aperte` (i nomi, al massimo 25), `numeri`,
+`entity_id` del pannello e `ts` del gateway.
+
+**Dal gateway V0.8.56 quell'argomento porta anche i comandi riusciti**, con `ok` a
+`true` e un `messaggio` già composto in italiano. L'evento continua a scattare **solo
+sui fallimenti**: si chiama «rifiutato» e chi lo ascolta si aspetta un guaio, quindi
+lanciarlo anche sui successi farebbe annunciare «non inserito» a inserimento
+avvenuto. I successi restano nella mappa, dove li legge la scheda.
+
+Nella scheda le frasi restano le nostre per gli esiti che conosce — *Codice errato*,
+*non inserito, 2 zone aperte: …* — e si usa il `messaggio` del gateway per quelli
+nati dopo questa versione della card, al posto del testo generico. Un esito con
+`ok: true` **non chiude l'attesa**: vuol dire che il gateway ha preso il comando, non
+che la centrale ha finito, e l'unica prova resta lo stato del programma.
 
 Dal gateway V0.8.55 l'ultimo rifiuto sta anche **negli attributi del pannello** del
 programma (`esito`, `zone_aperte`, `ts`), leggibili con `state_attr` senza passare

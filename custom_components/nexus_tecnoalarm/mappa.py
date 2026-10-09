@@ -55,6 +55,9 @@ _SCHEMA_TOPIC_RIFIUTO = re.compile(r"^tecnoalarm/programma/(\d+)/rifiuto$")
 # Quante zone, e quanto lunghi i nomi, si tengono di un rifiuto.
 MAX_ZONE_RIFIUTO = 25
 MAX_NOME_ZONA = 48
+# La frase gia' composta dal gateway. Il tetto non e' timore del gateway: e'
+# che il payload arriva da un broker e finisce in un attributo di stato.
+MAX_MESSAGGIO = 200
 
 
 @dataclass(frozen=True)
@@ -227,7 +230,7 @@ def con_rifiuto(
 
 
 def pulisci_rifiuto(dati: Any) -> dict[str, Any] | None:
-    """Solo i campi attesi del rifiuto, con i tipi attesi.
+    """Solo i campi attesi dell'esito, con i tipi attesi.
 
     Il payload arriva da un broker: non si ripubblica alla cieca quello che
     contiene. Senza un esito leggibile il messaggio non dice niente alla scheda
@@ -249,6 +252,18 @@ def pulisci_rifiuto(dati: Any) -> dict[str, Any] | None:
         valore = dati.get(chiave)
         if isinstance(valore, str):
             pulito[chiave] = valore
+
+    # Dalla V0.8.56 l'argomento porta anche i comandi riusciti: 'ok' dice come
+    # e' andata e 'messaggio' e' la frase gia' scritta dal gateway. Vanno tenuti
+    # tutti e due - sono quelli su cui la scheda decide - e 'ok' deve essere un
+    # booleano vero: con i gateway che non lo mandano la chiave non c'e', e
+    # «non lo so» non e' «no».
+    if isinstance(dati.get("ok"), bool):
+        pulito["ok"] = dati["ok"]
+
+    messaggio = dati.get("messaggio")
+    if isinstance(messaggio, str) and messaggio.strip():
+        pulito["messaggio"] = messaggio.strip()[:MAX_MESSAGGIO]
 
     for chiave in ("programma", "ts"):
         valore = dati.get(chiave)

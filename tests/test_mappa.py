@@ -390,6 +390,32 @@ verifica(
     sorted(pulito),
 )
 
+# --- 8-ter. ok e messaggio (gateway V0.8.56) ---------------------------------
+# Dalla 0.8.56 l'argomento porta anche i comandi riusciti. Scartare i due campi
+# nuovi vorrebbe dire leggere un successo come un fallimento.
+pulito = pulisci_rifiuto({
+    "esito": "accettato", "programma": 2, "ok": True,
+    "messaggio": "  Notte inserito  ", "ts": 5,
+})
+verifica("ok booleano conservato", pulito["ok"] is True, pulito.get("ok"))
+verifica("messaggio conservato e ripulito",
+         pulito["messaggio"] == "Notte inserito", pulito.get("messaggio"))
+
+pulito = pulisci_rifiuto({"esito": "nessuna_risposta", "ok": False, "messaggio": "x" * 500})
+verifica("ok falso resta falso", pulito["ok"] is False, pulito.get("ok"))
+verifica("messaggio tagliato a 200", len(pulito["messaggio"]) == 200, len(pulito["messaggio"]))
+
+# «Non lo so» non e' «no»: con i gateway che non mandano 'ok' la chiave non ci
+# deve essere, o la scheda leggerebbe un fallimento dove non c'e' niente.
+pulito = pulisci_rifiuto({"esito": "codice_errato", "ok": "si", "messaggio": "   "})
+verifica(
+    "ok non booleano e messaggio vuoto: scartati",
+    "ok" not in pulito and "messaggio" not in pulito,
+    sorted(pulito),
+)
+pulito = pulisci_rifiuto({"esito": "codice_errato"})
+verifica("gateway vecchio: nessuna chiave inventata", "ok" not in pulito, sorted(pulito))
+
 # --- 9. il rifiuto deve riscrivere lo stato ----------------------------------
 # Home Assistant riscrive uno stato solo se gli attributi nuovi sono diversi da
 # quelli del vecchio stato, di cui tiene una copia SUPERFICIALE (ReadOnlyDict).

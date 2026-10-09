@@ -601,7 +601,12 @@ function testoRifiuto(rifiuto) {
       ? `non inserito, ${testoZoneAperte(nomi.length, nomi)}`
       : "non inserito: ci sono zone aperte";
   }
-  return TESTI_ESITO[rifiuto.esito] || `comando non eseguito (${rifiuto.esito})`;
+  // Prima le nostre frasi, che sono tarate sui casi che conosciamo; poi quella
+  // del gateway, che dalla V0.8.56 arriva gia' scritta e copre anche gli esiti
+  // nati dopo questa versione della scheda.
+  return TESTI_ESITO[rifiuto.esito]
+    || rifiuto.messaggio
+    || `comando non eseguito (${rifiuto.esito})`;
 }
 
 /**
@@ -1579,7 +1584,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
         continue;
       }
       const rifiuto = (this._mappa().rifiuti || {})[String(attesa.numero)];
-      if (rifiuto && rifiuto.ts !== attesa.tsPrima) {
+      if (rifiuto && rifiuto.ts !== attesa.tsPrima && rifiuto.ok !== true) {
+        // ok === true non si annuncia e non chiude l'attesa: il comando e'
+        // stato preso, e se la centrale lo rifiutera' davvero arrivera' un
+        // altro esito con un ts nuovo. Senza questa riga un inserimento
+        // riuscito aprirebbe il dialogo «non inserito».
         this._chiudiInserimento(entityId);
         this._offriRifiuto(attesa, rifiuto);
       }
@@ -1723,7 +1732,9 @@ class NexusTecnoalarmAllarme extends HTMLElement {
           continue;
         }
 
-        const testo = TESTI_ESITO[esito.esito] || `Il gateway non ha eseguito il comando (${esito.esito})`;
+        const testo = TESTI_ESITO[esito.esito]
+          || (esito.rifiuto && esito.rifiuto.messaggio)
+          || `Il gateway non ha eseguito il comando (${esito.esito})`;
         this._mostra(
           this._conProgressi(testo, riusciti, programmi.length),
           esito.esito === "timeout" ? "attenzione" : "allarme"
@@ -1796,6 +1807,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
 
     const rifiuto = (this._mappa().rifiuti || {})[String(attesa.programma.numero)];
     if (rifiuto && rifiuto.ts !== attesa.tsPrima) {
+      // Dalla V0.8.56 su questo argomento passano anche i successi. 'accettato'
+      // vuol dire che il gateway ha preso il comando, non che la centrale si e'
+      // disinserita: non e' un fallimento, ma non e' nemmeno la fine. Si
+      // continua ad aspettare lo stato, che resta l'unica prova.
+      if (rifiuto.ok === true) return;
       attesa.risolvi({ esito: rifiuto.esito || "sconosciuto", rifiuto });
     }
   }

@@ -288,6 +288,13 @@ class MappaAllarme:
         Un evento in piu' non costa niente a chi non lo ascolta, e un rifiuto
         capita quanto un comando sbagliato: non e' un flusso continuo.
         """
+        # Dalla V0.8.56 sull'argomento passano anche i comandi riusciti. L'evento
+        # si chiama «rifiutato» e chi lo ascolta si aspetta un guaio: lanciarlo
+        # anche sui successi farebbe annunciare «non inserito» a inserimento
+        # avvenuto. I successi restano nella mappa, dove la scheda li legge.
+        if pulito.get("ok") is True:
+            return
+
         entita = None
         for programma in self.mappa.get("programmi", []):
             if programma.get("numero") == numero:
@@ -301,6 +308,8 @@ class MappaAllarme:
                 "nome": pulito.get("nome"),
                 "azione": pulito.get("azione"),
                 "esito": pulito["esito"],
+                "ok": pulito.get("ok"),
+                "messaggio": pulito.get("messaggio"),
                 "zone_aperte": pulito.get("zone_aperte", []),
                 "numeri": pulito.get("numeri", []),
                 "entity_id": entita,
