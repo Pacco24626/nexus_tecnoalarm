@@ -130,9 +130,13 @@ I blocchi:
   quando il gateway la pubblica, la riga delle zone aperte.
 - **Zone** — con l'icona che corrisponde al `device_class` dichiarato
   dall'installatore e le segnalazioni estese della zona (esclusa, manomissione,
-  guasto, batteria). **Si parte dalle sole zone aperte**: su una centrale grande
-  l'elenco intero è una parete di tessere uguali, e prima di inserire serve sapere
-  che cosa non è chiuso. Il tasto *Tutte* le mostra tutte.
+  guasto, batteria). **Si parte da *Da verificare***: le zone aperte, quelle che
+  portano una segnalazione anche se chiuse, e quelle che non rispondono. Su una
+  centrale grande l'elenco intero è una parete di tessere uguali, e prima di
+  inserire serve sapere che cosa non è a posto — una zona **esclusa** è chiusa e non
+  impedisce l'inserimento, ed è proprio quella che vuoi vedere. Il tasto *Tutte* le
+  mostra tutte. Quando c'è una segnalazione il conteggio lo dice: *tutte chiuse · 29
+  · 1 segnalata*.
 - **Telecomandi** — interruttori.
 - **Memorie di allarme** — la spia della centrale e il pulsante per azzerarle.
 - **Registro eventi** — gli ultimi 50 eventi della centrale, richiudibile e chiuso

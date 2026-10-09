@@ -187,7 +187,7 @@ function statoMappa(rifiuti = {}) {
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
   spieNellaMappa = spie || {};
@@ -199,7 +199,9 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
       [MAPPA]: statoMappa(rifiuti),
       [TOTALE.entity_id]: stato(TOTALE.entity_id, totale),
       [NOTTE.entity_id]: stato(NOTTE.entity_id, notte),
-      "binary_sensor.porta": stato("binary_sensor.porta", porta, { device_class: "door" }),
+      "binary_sensor.porta": stato("binary_sensor.porta", porta, {
+        device_class: "door", ...(esclusaPorta ? { esclusa: true } : {}),
+      }),
       "binary_sensor.finestra": stato("binary_sensor.finestra", "off", { device_class: "window" }),
       "switch.luce": stato("switch.luce", "off"),
       "binary_sensor.allarme": stato("binary_sensor.allarme", allarme),
@@ -525,27 +527,48 @@ async function prove() {
       && messaggio(scheda) === "Codice errato", messaggio(scheda));
   }
 
-  // 12. filtro delle zone aperte
+  // 12. filtro delle zone: si parte da quelle da verificare
   {
-    // Si parte dalle aperte, senza toccare niente.
     const { scheda } = prepara({ porta: "on" });
     const porta = scheda._el.zone.get("binary_sensor.porta").tessera;
     const finestra = scheda._el.zone.get("binary_sensor.finestra").tessera;
-    verifica("all'apertura si vedono solo le zone aperte",
-      scheda._filtroZone === "aperte" && porta.hidden === false && finestra.hidden === true,
+    verifica("all'apertura si vedono solo le zone da verificare",
+      scheda._filtroZone === "verificare" && porta.hidden === false && finestra.hidden === true,
       scheda._filtroZone);
-    const tutte = bottoni(scheda).find((b) => b.textContent === "Tutte");
-    verifica("il tasto «Aperte» risulta quello premuto",
-      bottoni(scheda).find((b) => b.textContent === "Aperte").getAttribute("aria-pressed") === "true");
-    tutte.click();
+    verifica("il tasto «Da verificare» risulta quello premuto",
+      bottoni(scheda).find((b) => b.textContent === "Da verificare")
+        .getAttribute("aria-pressed") === "true");
+    bottoni(scheda).find((b) => b.textContent === "Tutte").click();
     verifica("premuto «Tutte» tornano tutte",
       scheda._filtroZone === "tutte" && porta.hidden === false && finestra.hidden === false);
   }
   {
-    // Tutto chiuso: l'elenco e' vuoto e lo dice, invece di lasciare un buco.
+    // Niente da verificare: l'elenco e' vuoto e lo dice, invece di un buco.
     const { scheda } = prepara({ porta: "off" });
-    verifica("tutto chiuso: si dice che non c'e' niente di aperto",
-      scheda._el.vuotoZone.hidden === false, "vuoto nascosto");
+    verifica("niente da verificare: lo si scrive",
+      scheda._el.vuotoZone.hidden === false
+      && scheda._el.vuotoZone.textContent === "Nessuna zona da verificare.",
+      scheda._el.vuotoZone.textContent);
+    verifica("niente da verificare: il conteggio non parla di segnalazioni",
+      scheda._el.conteggioZone.textContent === "tutte chiuse · 2",
+      scheda._el.conteggioZone.textContent);
+  }
+  {
+    // Una zona ESCLUSA e chiusa: non impedisce l'inserimento, ma e' proprio
+    // quella che vuoi vedere prima di inserire. Prima spariva.
+    const { scheda } = prepara({ porta: "off", esclusaPorta: true });
+    const porta = scheda._el.zone.get("binary_sensor.porta").tessera;
+    verifica("zona esclusa e chiusa: resta in vista", porta.hidden === false);
+    verifica("il conteggio dice che c'e' una segnalazione",
+      scheda._el.conteggioZone.textContent === "tutte chiuse · 2 · 1 segnalata",
+      scheda._el.conteggioZone.textContent);
+  }
+  {
+    // Una zona che non risponde: non sappiamo com'e', e non saperlo e' gia'
+    // un motivo per guardarla.
+    const { scheda } = prepara({ porta: "unavailable" });
+    verifica("zona che non risponde: resta in vista",
+      scheda._el.zone.get("binary_sensor.porta").tessera.hidden === false);
   }
 
   // 13. allarme in corso

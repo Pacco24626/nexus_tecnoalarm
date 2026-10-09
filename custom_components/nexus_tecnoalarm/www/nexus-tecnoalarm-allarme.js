@@ -613,10 +613,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._radice = this.attachShadow({ mode: "open" });
     this._codice = "";
     this._occupato = false;
-    // Si parte dalle aperte: su una centrale da trenta zone l'elenco intero e'
-    // una parete di tessere tutte uguali, e cio' che serve prima di inserire e'
-    // sapere che cosa NON e' chiuso. «Tutte» resta a un tocco.
-    this._filtroZone = "aperte";
+    // Si parte da cio' che non e' a posto: su una centrale da trenta zone
+    // l'elenco intero e' una parete di tessere uguali, e prima di inserire
+    // serve sapere che cosa non e' chiuso o porta una segnalazione.
+    // «Tutte» resta a un tocco.
+    this._filtroZone = "verificare";
     this._inInserimento = new Set();
     this._attesa = null;
     this._messaggio = null;
@@ -910,15 +911,17 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     }
 
     this._el.conteggioZone = el("span", { classe: "conteggio" });
-    this._el.vuotoZone = el("div", { classe: "vuoto", testo: "Nessuna zona aperta.", hidden: true });
+    this._el.vuotoZone = el("div", {
+      classe: "vuoto", testo: "Nessuna zona da verificare.", hidden: true,
+    });
 
     // Su una centrale grande le zone sono centinaia: poter guardare solo
-    // quelle aperte e' cio' che serve prima di inserire.
+    // quelle che non sono a posto e' cio' che serve prima di inserire.
     const filtro = el("div", { classe: "filtro", role: "group", "aria-label": "Zone da mostrare" });
-    this._el.filtri = ["tutte", "aperte"].map((valore) => {
+    this._el.filtri = ["tutte", "verificare"].map((valore) => {
       const bottone = el("button", {
         type: "button",
-        testo: valore === "tutte" ? "Tutte" : "Aperte",
+        testo: valore === "tutte" ? "Tutte" : "Da verificare",
         onclick: () => {
           this._filtroZone = valore;
           this._firmaStati = null;
@@ -1246,6 +1249,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
   _disegnaZone(mappa) {
     const zone = mappa.zone || [];
     let aperte = 0;
+    let segnalate = 0;
     let visibili = 0;
 
     for (const zona of zone) {
@@ -1271,14 +1275,29 @@ class NexusTecnoalarmAllarme extends HTMLElement {
         ...bandierine.map((b) => el("span", { classe: "bandierina", "data-tono": b.tono, testo: b.testo }))
       );
 
-      const mostrata = this._filtroZone === "tutte" || aperta || inAllarme;
+      // «Da verificare» non vuol dire solo aperta. Una zona esclusa non
+      // impedisce l'inserimento ed e' chiusa: senza questo sparirebbe dalla
+      // vista di apertura, ed e' proprio quella che vuoi vedere prima di
+      // inserire. Stesso discorso per manomissione, guasto e batteria. Una
+      // zona che non risponde ci sta per il motivo opposto: non sappiamo
+      // com'e', e non saperlo e' gia' una ragione per guardarla.
+      const daVerificare = aperta || mancante || bandierine.length > 0;
+      if (daVerificare && !aperta) segnalate += 1;
+
+      const mostrata = this._filtroZone === "tutte" || daVerificare;
       voce.tessera.hidden = !mostrata;
       if (mostrata) visibili += 1;
     }
 
-    this._el.conteggioZone.textContent = aperte
+    const conto = aperte
       ? `${aperte} aperte su ${zone.length}`
       : `tutte chiuse · ${zone.length}`;
+    // La riga del conteggio non deve smentire le tessere: con tutto chiuso e
+    // una zona esclusa a schermo, il solo «tutte chiuse» farebbe chiedere
+    // perche' quella tessera sta li'.
+    this._el.conteggioZone.textContent = segnalate
+      ? `${conto} · ${segnalate} ${segnalate === 1 ? "segnalata" : "segnalate"}`
+      : conto;
     this._el.vuotoZone.hidden = visibili > 0;
     this._el.filtri.forEach(({ valore, bottone }) => {
       bottone.setAttribute("aria-pressed", String(valore === this._filtroZone));

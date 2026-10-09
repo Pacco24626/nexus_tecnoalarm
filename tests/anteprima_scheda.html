@@ -95,7 +95,11 @@
   }
   for (const z of zone) {
     stati[z.entity_id] = { entity_id: z.entity_id, state: z.numero === 1 ? "on" : "off",
-      last_updated: "1", attributes: { device_class: z.numero === 2 ? "window" : "door" } };
+      last_updated: "1", attributes: {
+        device_class: z.numero === 2 ? "window" : "door",
+        // La 3 e' chiusa ma esclusa: nella vista di apertura deve restare.
+        ...(z.numero === 3 ? { esclusa: true } : {}),
+      } };
   }
   for (const t of telecomandi) {
     stati[t.entity_id] = { entity_id: t.entity_id, state: "off", last_updated: "1", attributes: {} };
