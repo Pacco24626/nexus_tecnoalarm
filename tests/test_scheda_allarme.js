@@ -176,8 +176,11 @@ function statoMappa(rifiuti = {}) {
       zone_aperte: spieNellaMappa[p.numero] ? `binary_sensor.zoneap_${p.numero}` : null,
     })),
     zone: [
-      { numero: 1, entity_id: "binary_sensor.porta", nome: "Porta" },
-      { numero: 2, entity_id: "binary_sensor.finestra", nome: "Finestra" },
+      // La 1 ha casa, la 2 no: cosi' si prova anche il gruppo di coda.
+      { numero: 1, entity_id: "binary_sensor.porta", nome: "Porta",
+        area: "Salotto", piano: "Piano Terra" },
+      { numero: 2, entity_id: "binary_sensor.finestra", nome: "Finestra",
+        area: null, piano: null },
     ],
     telecomandi: [{ numero: 1, entity_id: "switch.luce", nome: "Luce" }],
     allarme_generale: "binary_sensor.allarme",
@@ -187,7 +190,7 @@ function statoMappa(rifiuti = {}) {
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
   spieNellaMappa = spie || {};
@@ -274,7 +277,7 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
     pubblica();
   }, 1000);
 
-  scheda.setConfig({ entity: MAPPA });
+  scheda.setConfig({ entity: MAPPA, ...(config || {}) });
   pubblica();
   return { scheda, chiamate, casa, pubblica };
 }
@@ -569,6 +572,51 @@ async function prove() {
     const { scheda } = prepara({ porta: "unavailable" });
     verifica("zona che non risponde: resta in vista",
       scheda._el.zone.get("binary_sensor.porta").tessera.hidden === false);
+  }
+
+  // 12-bis. raggruppamento delle zone
+  const titoliGruppi = (scheda) => scheda._el.gruppiZone
+    .filter((g) => !g.blocco.hidden)
+    .map((g) => (g.titolo && !g.titolo.hidden ? g.titolo.textContent : "(senza titolo)"));
+  {
+    // Predefinito: per piano, e chi non ce l'ha va in fondo.
+    const { scheda } = prepara({ porta: "on" });
+    bottoni(scheda).find((b) => b.textContent === "Tutte").click();
+    verifica("predefinito: si raggruppa per piano",
+      scheda._raggruppa === "piano"
+      && titoliGruppi(scheda).join("|") === "Piano Terra|Senza piano",
+      titoliGruppi(scheda).join("|"));
+  }
+  {
+    const { scheda } = prepara({ porta: "on", config: { raggruppa: "area" } });
+    bottoni(scheda).find((b) => b.textContent === "Tutte").click();
+    verifica("per area: i titoli sono le stanze",
+      titoliGruppi(scheda).join("|") === "Salotto|Senza area",
+      titoliGruppi(scheda).join("|"));
+  }
+  {
+    const { scheda } = prepara({ porta: "on", config: { raggruppa: "nessuno" } });
+    bottoni(scheda).find((b) => b.textContent === "Tutte").click();
+    verifica("nessun raggruppamento: un gruppo solo e senza titolo",
+      titoliGruppi(scheda).join("|") === "(senza titolo)",
+      titoliGruppi(scheda).join("|"));
+  }
+  {
+    // Un valore scritto a mano che non esiste non deve rompere la scheda.
+    const { scheda } = prepara({ porta: "on", config: { raggruppa: "per stanza" } });
+    verifica("valore sconosciuto: si ripiega sul predefinito",
+      scheda._raggruppa === "piano", scheda._raggruppa);
+  }
+  {
+    // In «Da verificare» i titoli spariscono e i gruppi vuoti con loro:
+    // un'intestazione sopra una tessera sola e' rumore.
+    const { scheda } = prepara({ porta: "on" });
+    verifica("da verificare: nessun titolo e solo il gruppo che ha qualcosa",
+      titoliGruppi(scheda).join("|") === "(senza titolo)",
+      titoliGruppi(scheda).join("|"));
+    verifica("da verificare: il gruppo senza tessere visibili sparisce",
+      scheda._el.gruppiZone.filter((g) => !g.blocco.hidden).length === 1,
+      String(scheda._el.gruppiZone.filter((g) => !g.blocco.hidden).length));
   }
 
   // 13. allarme in corso

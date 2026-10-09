@@ -252,6 +252,43 @@ verifica(
     mappa["programmi"][0],
 )
 
+# --- 5-quinquies. area e piano delle zone ------------------------------------
+# Li risolve il lato server e li mette nella mappa: una card gira con i permessi
+# di chi la guarda, e sul tablet di casa il registro delle aree non lo vede.
+mappa = classifica(
+    [
+        Voce("binary_sensor.z1", "tec_z_1_v30", None, "Finestra cucina",
+             area="Cucina", piano="Piano Terra"),
+        Voce("binary_sensor.z2", "tec_z_2_v30", None, "Guasto PdC"),
+        Voce("alarm_control_panel.p1", "tec_p_1_v30", None, "Totale",
+             area="Salotto", piano="Piano Terra"),
+        Voce("switch.t1", "tec_t_1_v30", None, "Luce", area="Salotto"),
+    ],
+    DISPOSITIVO,
+)
+verifica(
+    "la zona porta area e piano",
+    mappa["zone"][0]["area"] == "Cucina" and mappa["zone"][0]["piano"] == "Piano Terra",
+    mappa["zone"][0],
+)
+verifica(
+    "zona senza area: le chiavi ci sono e valgono None",
+    mappa["zone"][1]["area"] is None and mappa["zone"][1]["piano"] is None,
+    mappa["zone"][1],
+)
+# Programmi e telecomandi non si raggruppano: portarsi dietro area e piano
+# vorrebbe dire gonfiare un attributo di stato con un dato che nessuno legge.
+verifica(
+    "i programmi non portano l'area",
+    "area" not in mappa["programmi"][0] and "piano" not in mappa["programmi"][0],
+    sorted(mappa["programmi"][0]),
+)
+verifica(
+    "i telecomandi non portano l'area",
+    "area" not in mappa["telecomandi"][0],
+    sorted(mappa["telecomandi"][0]),
+)
+
 # --- 6. la centrale piu' grande ----------------------------------------------
 # Una TP20-440 arriva a 440 zone. Le voci arrivano nell'ordine del registro,
 # che non e' quello di programmazione.

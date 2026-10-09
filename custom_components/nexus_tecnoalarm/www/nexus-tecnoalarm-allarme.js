@@ -86,6 +86,12 @@ const BANDIERINE = [
 
 const TASTI = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "C"];
 
+// Come si raggruppano le zone. Il predefinito e' il piano: su un impianto da
+// trenta zone le aree sono una dozzina, cioe' un'intestazione ogni due
+// tessere, mentre i piani sono due o tre.
+const RAGGRUPPAMENTI = ["piano", "area", "nessuno"];
+const RAGGRUPPA_PREDEFINITO = "piano";
+
 const STILE = `
   :host { display: block; }
   [hidden] { display: none !important; }
@@ -354,6 +360,16 @@ const STILE = `
   .evento .cosa { font-size: 13px; line-height: 1.35; word-break: break-word; }
   .nota-registro { font-size: 11px; color: var(--secondary-text-color); padding: 8px 2px 0; }
 
+  .gruppi-zone { display: flex; flex-direction: column; gap: 12px; }
+  .gruppo-zone {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--secondary-text-color);
+    padding: 0 2px 6px;
+  }
+
   /* --- Dialogo ------------------------------------------------------------- */
   .corpo-dialogo .codice { margin-bottom: 10px; }
   .corpo-dialogo .tastierino { margin-bottom: 12px; }
@@ -588,6 +604,32 @@ function testoRifiuto(rifiuto) {
   return TESTI_ESITO[rifiuto.esito] || `comando non eseguito (${rifiuto.esito})`;
 }
 
+/**
+ * Le zone divise in gruppi, nell'ordine in cui arrivano.
+ *
+ * Non in ordine alfabetico: le zone arrivano gia' ordinate per numero di
+ * programmazione, che di solito segue il giro della casa - prima il piano
+ * terra, poi le camere. In ordine alfabetico «Interrato» finirebbe davanti a
+ * «Piano Terra», che e' l'opposto di come si cammina.
+ *
+ * Quelle senza area vanno in fondo: sugli impianti veri sono gli ingressi
+ * tecnici - un guasto riportato, un'uscita - non stanze dimenticate.
+ */
+function raggruppaZone(zone, modo) {
+  if (modo === "nessuno") return [{ titolo: null, zone }];
+  const gruppi = new Map();
+  for (const zona of zone) {
+    const nome = (modo === "area" ? zona.area : zona.piano) || null;
+    if (!gruppi.has(nome)) gruppi.set(nome, []);
+    gruppi.get(nome).push(zona);
+  }
+  const fuori = gruppi.get(null);
+  gruppi.delete(null);
+  const elenco = [...gruppi.entries()].map(([titolo, elenco]) => ({ titolo, zone: elenco }));
+  if (fuori) elenco.push({ titolo: modo === "area" ? "Senza area" : "Senza piano", zone: fuori });
+  return elenco;
+}
+
 function iconaEvento(descrizione) {
   for (const [parola, icona] of ICONE_EVENTO) if (parola.test(descrizione)) return icona;
   return ICONA_EVENTO;
@@ -643,6 +685,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       throw new Error("Indica l'entità della mappa dell'allarme");
     }
     this._config = config;
+    // Un valore scritto a mano che non esiste non deve rompere la scheda: si
+    // ripiega sul predefinito, come fa Home Assistant con le sue opzioni.
+    this._raggruppa = RAGGRUPPAMENTI.includes(config.raggruppa)
+      ? config.raggruppa
+      : RAGGRUPPA_PREDEFINITO;
     this._firmaStruttura = null;
     this._firmaStati = null;
     this._el = null;
@@ -895,19 +942,27 @@ class NexusTecnoalarmAllarme extends HTMLElement {
 
   _costruisciZone(mappa) {
     const zone = mappa.zone || [];
-    const griglia = el("div", { classe: "griglia" });
     this._el.zone = new Map();
+    this._el.gruppiZone = [];
+    const contenitore = el("div", { classe: "gruppi-zone" });
 
-    for (const zona of zone) {
-      const icona = el("ha-state-icon");
-      const stato = el("span", { classe: "riga-stato" });
-      const tessera = el("div", { classe: "tessera" }, [
-        icona,
-        el("span", { classe: "nome", testo: zona.nome }),
-        stato,
-      ]);
-      griglia.appendChild(tessera);
-      this._el.zone.set(zona.entity_id, { tessera, icona, stato });
+    for (const gruppo of raggruppaZone(zone, this._raggruppa)) {
+      const griglia = el("div", { classe: "griglia" });
+      for (const zona of gruppo.zone) {
+        const icona = el("ha-state-icon");
+        const stato = el("span", { classe: "riga-stato" });
+        const tessera = el("div", { classe: "tessera" }, [
+          icona,
+          el("span", { classe: "nome", testo: zona.nome }),
+          stato,
+        ]);
+        griglia.appendChild(tessera);
+        this._el.zone.set(zona.entity_id, { tessera, icona, stato });
+      }
+      const titolo = gruppo.titolo ? el("div", { classe: "gruppo-zone", testo: gruppo.titolo }) : null;
+      const blocco = el("div", {}, titolo ? [titolo, griglia] : [griglia]);
+      contenitore.appendChild(blocco);
+      this._el.gruppiZone.push({ blocco, titolo, zone: gruppo.zone.map((z) => z.entity_id) });
     }
 
     this._el.conteggioZone = el("span", { classe: "conteggio" });
@@ -938,7 +993,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
         this._el.conteggioZone,
         filtro,
       ]),
-      griglia,
+      contenitore,
       this._el.vuotoZone,
     ]);
   }
@@ -1299,6 +1354,19 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       ? `${conto} · ${segnalate} ${segnalate === 1 ? "segnalata" : "segnalate"}`
       : conto;
     this._el.vuotoZone.hidden = visibili > 0;
+
+    // Le intestazioni servono quando si sfoglia tutto. In «Da verificare» ci
+    // sono due o tre tessere, e un titolo sopra ciascuna e' piu' rumore che
+    // ordine; un gruppo rimasto senza tessere sparisce del tutto.
+    for (const gruppo of this._el.gruppiZone) {
+      const quante = gruppo.zone.filter((id) => {
+        const voce = this._el.zone.get(id);
+        return voce && !voce.tessera.hidden;
+      }).length;
+      gruppo.blocco.hidden = quante === 0;
+      if (gruppo.titolo) gruppo.titolo.hidden = this._filtroZone !== "tutte";
+    }
+
     this._el.filtri.forEach(({ valore, bottone }) => {
       bottone.setAttribute("aria-pressed", String(valore === this._filtroZone));
     });
@@ -1755,7 +1823,25 @@ const SCHEMA_EDITOR = [
     required: true,
     selector: { entity: { integration: "nexus_tecnoalarm", domain: "sensor" } },
   },
+  {
+    name: "raggruppa",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [
+          { value: "piano", label: "Per piano" },
+          { value: "area", label: "Per area" },
+          { value: "nessuno", label: "Nessun raggruppamento" },
+        ],
+      },
+    },
+  },
 ];
+
+const ETICHETTE_EDITOR = {
+  entity: "Mappa dell'allarme",
+  raggruppa: "Raggruppa le zone",
+};
 
 class NexusTecnoalarmAllarmeEditor extends HTMLElement {
   setConfig(config) { this._config = config; this._aggiorna(); }
@@ -1766,7 +1852,7 @@ class NexusTecnoalarmAllarmeEditor extends HTMLElement {
     if (!this._form) {
       this._form = document.createElement("ha-form");
       this._form.schema = SCHEMA_EDITOR;
-      this._form.computeLabel = () => "Mappa dell'allarme";
+      this._form.computeLabel = (campo) => ETICHETTE_EDITOR[campo.name] || campo.name;
       this._form.addEventListener("value-changed", (evento) => {
         this.dispatchEvent(new CustomEvent("config-changed", {
           detail: { config: evento.detail.value },
@@ -1777,7 +1863,9 @@ class NexusTecnoalarmAllarmeEditor extends HTMLElement {
       this.appendChild(this._form);
     }
     this._form.hass = this._hass;
-    this._form.data = this._config;
+    // Il menu deve mostrare il valore che la scheda usa davvero, anche quando
+    // nella configurazione non c'e' niente.
+    this._form.data = { raggruppa: RAGGRUPPA_PREDEFINITO, ...this._config };
   }
 }
 

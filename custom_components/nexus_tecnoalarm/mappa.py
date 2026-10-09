@@ -82,13 +82,20 @@ def scegli_centrale(candidati: Iterable[Candidato]) -> str | None:
 
 @dataclass(frozen=True)
 class Voce:
-    """Una voce del registro entita', ridotta a cio' che serve qui."""
+    """Una voce del registro entita', ridotta a cio' che serve qui.
+
+    Area e piano arrivano gia' risolti in nomi: il registro delle aree lo legge
+    chi sta dal lato server, perche' una card gira con i permessi di chi la
+    guarda e sul tablet di casa non vedrebbe nulla.
+    """
 
     entity_id: str
     unique_id: str | None
     nome: str | None = None
     nome_originale: str | None = None
     disabilitata: bool = False
+    area: str | None = None
+    piano: str | None = None
 
 
 def mappa_vuota() -> dict[str, Any]:
@@ -173,13 +180,17 @@ def classifica(voci: Iterable[Voce], nomi_dispositivo: Iterable[str] = ()) -> di
 
         tipo = corrispondenza.group(1)
         numero = int(corrispondenza.group(2))
-        risultato[_SEZIONI[tipo]].append(
-            {
-                "numero": numero,
-                "entity_id": voce.entity_id,
-                "nome": nome_breve(voce, tipo, numero, nomi),
-            }
-        )
+        elemento: dict[str, Any] = {
+            "numero": numero,
+            "entity_id": voce.entity_id,
+            "nome": nome_breve(voce, tipo, numero, nomi),
+        }
+        # Solo le zone: sono le uniche che la scheda raggruppa, e un dato che
+        # nessuno legge pesa comunque su ogni aggiornamento dello stato.
+        if tipo == "z":
+            elemento["area"] = voce.area
+            elemento["piano"] = voce.piano
+        risultato[_SEZIONI[tipo]].append(elemento)
 
     for sezione in _SEZIONI.values():
         risultato[sezione].sort(key=lambda elemento: elemento["numero"])

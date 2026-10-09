@@ -121,6 +121,7 @@ Dalla 2.2.0 l'integrazione porta una seconda card, che mostra l'antifurto intero
 ```yaml
 type: custom:nexus-tecnoalarm-allarme
 entity: sensor.tecnoalarm_mappa_allarme
+raggruppa: piano   # piano (predefinito) | area | nessuno
 ```
 
 I blocchi:
@@ -145,6 +146,29 @@ I blocchi:
 Non si elenca niente a mano. La scheda legge le entita' che il gateway Nexus-T
 pubblica sul dispositivo *Centrale Tecnoalarm*: una zona aggiunta in programmazione
 compare da sola, e una tolta sparisce.
+
+### Come sono divise le zone
+
+Dalla 2.5.0 nella vista *Tutte* le zone sono raggruppate, e il raggruppamento lo
+decidono le **aree di Home Assistant**: assegni ogni zona alla sua stanza una volta
+sola, dalla tabella delle entità con la selezione multipla, e la scheda si ordina da
+sé. L'integrazione risolve area e piano lato server e li mette nella mappa, perché
+una card gira con i permessi di chi la guarda e sul tablet di casa il registro delle
+aree non lo vedrebbe.
+
+`raggruppa` sceglie come: **`piano`** (predefinito), **`area`**, **`nessuno`**. Il
+piano è il predefinito per una ragione di conti: su un impianto da trenta zone le
+aree sono una dozzina, cioè un'intestazione ogni due tessere, mentre i piani sono due
+o tre. L'opzione sta anche nell'editor visuale.
+
+L'ordine dei gruppi è quello di numerazione della centrale, non alfabetico: la
+programmazione di solito segue il giro della casa, mentre in ordine alfabetico
+«Interrato» finirebbe davanti a «Piano Terra». Le zone senza area vanno in fondo, in
+un gruppo a parte: sugli impianti veri sono ingressi tecnici — un guasto riportato,
+un'uscita — non stanze dimenticate.
+
+Nella vista *Da verificare* le intestazioni spariscono: lì ci sono due o tre tessere,
+e un titolo sopra ciascuna è più rumore che ordine.
 
 ### Il disinserimento
 

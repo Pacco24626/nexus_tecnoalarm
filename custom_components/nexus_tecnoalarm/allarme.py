@@ -19,8 +19,10 @@ import logging
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
 
 from .const import (
     EVENTO_RIFIUTO,
@@ -72,6 +74,15 @@ class MappaAllarme:
         )
         self._unsub.append(
             self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, self._su_registro)
+        )
+        # Anche le aree: spostare una zona di stanza cambia l'entita' e passa
+        # di sopra, ma rinominare l'area o cambiarle piano no, e la scheda
+        # resterebbe con l'intestazione vecchia fino al riavvio.
+        self._unsub.append(
+            self.hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, self._su_registro)
+        )
+        self._unsub.append(
+            self.hass.bus.async_listen(fr.EVENT_FLOOR_REGISTRY_UPDATED, self._su_registro)
         )
 
         # MQTT puo' non essere ancora pronto: l'attesa va in un task di fondo.
@@ -156,18 +167,42 @@ class MappaAllarme:
             nuova = mappa_vuota()
         else:
             registro = er.async_get(self.hass)
-            voci = [
-                Voce(
-                    entity_id=voce.entity_id,
-                    unique_id=voce.unique_id,
-                    nome=voce.name,
-                    nome_originale=voce.original_name,
-                    disabilitata=voce.disabled_by is not None,
+            aree = ar.async_get(self.hass)
+            piani = fr.async_get(self.hass)
+
+            def dove(voce: er.RegistryEntry) -> tuple[str | None, str | None]:
+                """Area e piano di un'entita', in nomi gia' pronti da mostrare.
+
+                L'entita' puo' avere un'area sua; se non ce l'ha vale quella del
+                dispositivo, che e' la regola di Home Assistant. Sulla centrale
+                il dispositivo di solito non ne ha, quindi chi non assegna le
+                zone resta senza area e la scheda le raccoglie in fondo.
+                """
+                id_area = voce.area_id or dispositivo.area_id
+                if id_area is None:
+                    return None, None
+                area = aree.async_get_area(id_area)
+                if area is None:
+                    return None, None
+                piano = piani.async_get_floor(area.floor_id) if area.floor_id else None
+                return area.name, (piano.name if piano else None)
+
+            voci = []
+            for voce in er.async_entries_for_device(
+                registro, dispositivo.id, include_disabled_entities=True
+            ):
+                area, piano = dove(voce)
+                voci.append(
+                    Voce(
+                        entity_id=voce.entity_id,
+                        unique_id=voce.unique_id,
+                        nome=voce.name,
+                        nome_originale=voce.original_name,
+                        disabilitata=voce.disabled_by is not None,
+                        area=area,
+                        piano=piano,
+                    )
                 )
-                for voce in er.async_entries_for_device(
-                    registro, dispositivo.id, include_disabled_entities=True
-                )
-            ]
             nomi_dispositivo = [
                 nome
                 for nome in (dispositivo.name_by_user, dispositivo.name, NOME_DISPOSITIVO_CENTRALE)

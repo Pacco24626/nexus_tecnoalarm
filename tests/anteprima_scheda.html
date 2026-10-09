@@ -63,10 +63,19 @@
     { numero: 3, entity_id: "alarm_control_panel.kinder", nome: "Kinder a casa" },
     { numero: 4, entity_id: "alarm_control_panel.esterno", nome: "Esterno" },
   ];
+  // Area e piano arrivano dalla mappa, risolti dall'integrazione: la 5 e' un
+  // ingresso tecnico e non sta in nessuna stanza, come su un impianto vero.
   const zone = [
-    { numero: 1, entity_id: "binary_sensor.porta_ingresso", nome: "Porta ingresso" },
-    { numero: 2, entity_id: "binary_sensor.finestra_cucina", nome: "Finestra cucina" },
-    { numero: 3, entity_id: "binary_sensor.sensore_garage", nome: "Sensore garage" },
+    { numero: 1, entity_id: "binary_sensor.porta_ingresso", nome: "Porta ingresso",
+      area: "Salotto", piano: "Piano Terra" },
+    { numero: 2, entity_id: "binary_sensor.finestra_cucina", nome: "Finestra cucina",
+      area: "Cucina", piano: "Piano Terra" },
+    { numero: 3, entity_id: "binary_sensor.sensore_garage", nome: "Sensore garage",
+      area: "Garage", piano: "Piano Terra" },
+    { numero: 4, entity_id: "binary_sensor.finestra_camera", nome: "Finestra camera",
+      area: "Camera matrimoniale", piano: "Primo piano" },
+    { numero: 5, entity_id: "binary_sensor.guasto_pdc", nome: "Guasto PdC",
+      area: null, piano: null },
   ];
   const telecomandi = [{ numero: 1, entity_id: "switch.telecomando_1", nome: "Telecomando 1" }];
 
@@ -99,6 +108,7 @@
         device_class: z.numero === 2 ? "window" : "door",
         // La 3 e' chiusa ma esclusa: nella vista di apertura deve restare.
         ...(z.numero === 3 ? { esclusa: true } : {}),
+        ...(z.numero === 5 ? { guasto: true } : {}),
       } };
   }
   for (const t of telecomandi) {
