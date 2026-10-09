@@ -134,6 +134,124 @@ mappa = classifica(
 )
 verifica("pulsante disabilitato: resta fuori dalla mappa", mappa["azzera_memorie"] is None)
 
+# --- 5-quater. interruttore di scavalco (gateway V0.8.55) --------------------
+# Serve a non restare chiusi fuori quando una zona si guasta aperta. Come le
+# altre entita' singole non segue lo schema numerato: senza un ramo suo la
+# scheda non avrebbe modo di trovarlo.
+mappa = classifica(
+    [
+        Voce("binary_sensor.z1", "tec_z_1_v30", None, "Zona 1"),
+        Voce("switch.consenti", "tec_consenti_zone_aperte", None,
+             "Consenti inserimento con zone aperte"),
+    ],
+    DISPOSITIVO,
+)
+verifica(
+    "interruttore di scavalco riconosciuto",
+    mappa["consenti_zone_aperte"] == "switch.consenti",
+    mappa.get("consenti_zone_aperte"),
+)
+verifica(
+    "lo scavalco non finisce fra i telecomandi",
+    mappa["telecomandi"] == [],
+    mappa["telecomandi"],
+)
+mappa = classifica([Voce("binary_sensor.z1", "tec_z_1_v30", None, "Z")], DISPOSITIVO)
+verifica(
+    "gateway senza scavalco: la chiave c'e' e vale None",
+    "consenti_zone_aperte" in mappa and mappa["consenti_zone_aperte"] is None,
+)
+verifica(
+    "mappa vuota: la chiave dello scavalco c'e' lo stesso",
+    mappa_vuota()["consenti_zone_aperte"] is None,
+)
+mappa = classifica(
+    [Voce("switch.consenti", "tec_consenti_zone_aperte", None, "Consenti", disabilitata=True)],
+    DISPOSITIVO,
+)
+verifica("scavalco disabilitato: resta fuori", mappa["consenti_zone_aperte"] is None)
+
+# --- 5-ter. spia «zone aperte» per programma (gateway V0.8.55) ---------------
+# Anche questo identificativo sta fuori dallo schema numerato, e la spia va
+# agganciata al programma giusto: appesa a quello sbagliato direbbe all'utente
+# che e' aperta una zona che non lo e'.
+voci = [
+    # Volutamente in disordine, con la spia del 2 prima del programma 2:
+    # l'aggancio non deve dipendere dall'ordine del registro.
+    Voce("binary_sensor.zoneap2", "tec_p_2_zoneap", None, "Notte zone aperte"),
+    Voce("alarm_control_panel.notte", "tec_p_2_v30", None, "Notte"),
+    Voce("alarm_control_panel.totale", "tec_p_1_v30", None, "Totale"),
+    Voce("binary_sensor.zoneap1", "tec_p_1_zoneap", None, "Totale zone aperte"),
+    Voce("binary_sensor.z1", "tec_z_1_v30", None, "Zona 1"),
+]
+mappa = classifica(voci, DISPOSITIVO)
+programmi = mappa["programmi"]
+verifica("la spia non diventa un programma in piu'", len(programmi) == 2, len(programmi))
+verifica(
+    "programma 1: la sua spia, non quella del 2",
+    programmi[0]["zone_aperte"] == "binary_sensor.zoneap1",
+    programmi[0].get("zone_aperte"),
+)
+verifica(
+    "programma 2: agganciata anche se arrivata prima",
+    programmi[1]["zone_aperte"] == "binary_sensor.zoneap2",
+    programmi[1].get("zone_aperte"),
+)
+verifica(
+    "la spia non finisce fra le zone",
+    [z["entity_id"] for z in mappa["zone"]] == ["binary_sensor.z1"],
+    mappa["zone"],
+)
+
+# Gateway precedente alla V0.8.55: la chiave c'e' comunque, a None. La scheda
+# distingue «nessuna spia» da «spia che non risponde», e senza la chiave
+# leggerebbe lo stesso valore nei due casi.
+mappa = classifica([Voce("alarm_control_panel.totale", "tec_p_1_v30", None, "Totale")], DISPOSITIVO)
+verifica(
+    "gateway senza la spia: la chiave c'e' e vale None",
+    "zone_aperte" in mappa["programmi"][0] and mappa["programmi"][0]["zone_aperte"] is None,
+    mappa["programmi"][0],
+)
+
+# Una spia orfana: il numero non corrisponde a nessun programma pubblicato.
+mappa = classifica(
+    [
+        Voce("alarm_control_panel.totale", "tec_p_1_v30", None, "Totale"),
+        Voce("binary_sensor.zoneap7", "tec_p_7_zoneap", None, "Spia 7"),
+    ],
+    DISPOSITIVO,
+)
+verifica(
+    "spia senza il suo programma: ignorata",
+    len(mappa["programmi"]) == 1 and mappa["programmi"][0]["zone_aperte"] is None,
+    mappa["programmi"],
+)
+
+# Disabilitata dall'utente: niente spia, come per ogni altra entita'.
+mappa = classifica(
+    [
+        Voce("alarm_control_panel.totale", "tec_p_1_v30", None, "Totale"),
+        Voce("binary_sensor.zoneap1", "tec_p_1_zoneap", None, "Spia", disabilitata=True),
+    ],
+    DISPOSITIVO,
+)
+verifica("spia disabilitata: resta fuori dalla mappa", mappa["programmi"][0]["zone_aperte"] is None)
+
+# Identificativi somiglianti che non sono la spia di un programma.
+mappa = classifica(
+    [
+        Voce("alarm_control_panel.totale", "tec_p_1_v30", None, "Totale"),
+        Voce("binary_sensor.a", "tec_z_1_zoneap", None, "Zona con coda strana"),
+        Voce("binary_sensor.b", "tec_p_1_zoneaperte", None, "Coda diversa"),
+    ],
+    DISPOSITIVO,
+)
+verifica(
+    "identificativi somiglianti: scartati",
+    mappa["programmi"][0]["zone_aperte"] is None,
+    mappa["programmi"][0],
+)
+
 # --- 6. la centrale piu' grande ----------------------------------------------
 # Una TP20-440 arriva a 440 zone. Le voci arrivano nell'ordine del registro,
 # che non e' quello di programmazione.
@@ -164,6 +282,76 @@ verifica("esito vuoto si scarta", pulisci_rifiuto({"esito": "  "}) is None)
 verifica("un booleano non vale come numero",
          "programma" not in (pulisci_rifiuto({"esito": "x", "programma": True}) or {}))
 verifica("un payload che non e' un dizionario si scarta", pulisci_rifiuto(["esito"]) is None)
+
+# --- 8-bis. i nomi delle zone nel rifiuto (modo 4 del gateway) ---------------
+# Senza i nomi il messaggio direbbe solo «ci sono zone aperte», che e' la parte
+# che l'utente ha gia' capito: quello che gli serve e' QUALE finestra chiudere.
+pulito = pulisci_rifiuto({
+    "esito": "zone_aperte", "programma": 1, "nome": "Totale", "azione": "ARM",
+    "zone_aperte": ["FINESTRA CUCINA", "  FIN.BAGNO P.T.  ", "", 7, None],
+    "numeri": [3, 5, "x", True],
+    "ts": 1700000000000,
+})
+verifica(
+    "i nomi delle zone passano, ripuliti",
+    pulito["zone_aperte"] == ["FINESTRA CUCINA", "FIN.BAGNO P.T."],
+    pulito.get("zone_aperte"),
+)
+
+# Il campo si chiamava 'zone' fino all'08/10/2026. Un gateway non aggiornato
+# manda ancora quello, e i nomi devono arrivare lo stesso: il contrario
+# vorrebbe dire aggiornare i due pezzi nello stesso minuto su ogni impianto.
+vecchio = pulisci_rifiuto({"esito": "zone_aperte", "zone": ["FIN.STUDIO"]})
+verifica(
+    "gateway vecchio: 'zone' legge ancora, sotto il nome nuovo",
+    vecchio["zone_aperte"] == ["FIN.STUDIO"] and "zone" not in vecchio,
+    sorted(vecchio),
+)
+# Se arrivano tutti e due vince il nome nuovo: e' quello che il gateway
+# aggiornato riempie, e il vecchio potrebbe essere un residuo.
+doppio = pulisci_rifiuto({
+    "esito": "zone_aperte", "zone_aperte": ["NUOVO"], "zone": ["VECCHIO"],
+})
+verifica("con tutti e due vince 'zone_aperte'", doppio["zone_aperte"] == ["NUOVO"],
+         doppio.get("zone_aperte"))
+verifica(
+    "i numeri delle zone passano, solo quelli veri",
+    pulito["numeri"] == [3, 5],
+    pulito.get("numeri"),
+)
+verifica("l'esito resta quello del gateway", pulito["esito"] == "zone_aperte")
+
+# Un rifiuto senza zone - per esempio un codice errato - non si porta dietro
+# chiavi vuote: la scheda distingue «non le manda» da «non ce ne sono».
+pulito = pulisci_rifiuto({"esito": "codice_errato", "programma": 2, "ts": 1})
+verifica(
+    "rifiuto senza zone: nessuna chiave inventata",
+    "zone_aperte" not in pulito and "numeri" not in pulito,
+    sorted(pulito),
+)
+
+# Una centrale grande, o un payload malevolo, non devono gonfiare un attributo
+# di stato che Home Assistant riscrive a ogni aggiornamento.
+pulito = pulisci_rifiuto({
+    "esito": "zone_aperte",
+    "zone_aperte": ["Z" * 200] + ["ZONA %d" % n for n in range(100)],
+    "numeri": list(range(100)),
+})
+verifica("elenco dei nomi tagliato a 25", len(pulito["zone_aperte"]) == 25,
+         len(pulito["zone_aperte"]))
+verifica("nome lungo tagliato a 48", len(pulito["zone_aperte"][0]) == 48,
+         len(pulito["zone_aperte"][0]))
+verifica("elenco dei numeri tagliato a 25", len(pulito["numeri"]) == 25, len(pulito["numeri"]))
+
+# 'zone' che non e' una lista si scarta, come ogni altro campo di forma sbagliata.
+pulito = pulisci_rifiuto({
+    "esito": "zone_aperte", "zone_aperte": "FINESTRA CUCINA", "numeri": 3,
+})
+verifica(
+    "zone e numeri di forma sbagliata: scartati",
+    "zone_aperte" not in pulito and "numeri" not in pulito,
+    sorted(pulito),
+)
 
 # --- 9. il rifiuto deve riscrivere lo stato ----------------------------------
 # Home Assistant riscrive uno stato solo se gli attributi nuovi sono diversi da

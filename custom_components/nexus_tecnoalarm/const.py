@@ -93,6 +93,12 @@ IDENTIFICATIVO_CENTRALE = ("mqtt", "tecnoalarm_gateway")
 NOME_DISPOSITIVO_CENTRALE = "Centrale Tecnoalarm"
 TOPIC_RIFIUTO = "tecnoalarm/programma/+/rifiuto"
 
+# L'evento con cui l'integrazione racconta a Home Assistant un comando che il
+# gateway non ha eseguito. Esiste per le automazioni: senza, chi vuole far
+# parlare un altoparlante dovrebbe mettersi in ascolto dell'argomento MQTT e
+# conoscere la forma dei topic del gateway, che non e' materia sua.
+EVENTO_RIFIUTO = "nexus_tecnoalarm_comando_rifiutato"
+
 KEY_MAPPA = "mappa_allarme"
 # Attributo con cui la scheda allarme riconosce il sensore giusto, e con cui
 # la tastiera lo scarta: entrambi hanno un attributo 'programmi'.

@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.4.0";
+const VERSIONE_SCHEDA = "2.5.0";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -28,6 +28,11 @@ const SCADENZA_CODICE_MS = 30000;
 const ATTESA_INSERIMENTO_MS = 6000;
 
 const MAX_CIFRE = 12;
+
+// Quanto si aspetta che il gateway confermi lo scavalco acceso prima di
+// mandare comunque l'inserimento.
+const ATTESA_SCAVALCO_MS = 3000;
+const PASSO_SCAVALCO_MS = 200;
 
 /** Il registro eventi e' un'entita' a parte del gateway (V0.8.54 e successivi).
  * Si riconosce da questo attributo: l'identificativo dipende dal nome del
@@ -349,6 +354,17 @@ const STILE = `
   .evento .cosa { font-size: 13px; line-height: 1.35; word-break: break-word; }
   .nota-registro { font-size: 11px; color: var(--secondary-text-color); padding: 8px 2px 0; }
 
+  /* --- Dialogo ------------------------------------------------------------- */
+  .corpo-dialogo .codice { margin-bottom: 10px; }
+  .corpo-dialogo .tastierino { margin-bottom: 12px; }
+  .dialogo .messaggio { margin-top: 10px; }
+  .dialogo p.forte { color: var(--allarme); font-weight: 600; }
+
+  /* --- Zone aperte per programma ------------------------------------------- */
+  .zone-aperte { font-size: 12px; line-height: 1.35; }
+  .zone-aperte[data-tono="aperte"] { color: var(--attenzione); font-weight: 600; }
+  .zone-aperte[data-tono="ignoto"] { color: var(--secondary-text-color); font-style: italic; }
+
   /* --- Memorie di allarme -------------------------------------------------- */
   .azzera {
     display: flex;
@@ -494,6 +510,40 @@ function spezzaEvento(riga) {
   return { data: testo.slice(0, 8), ora: testo.slice(9, 17), descrizione: testo.slice(18).trim() };
 }
 
+/** «2 zone aperte: FINESTRA CUCINA, FIN.BAGNO P.T.»
+ *
+ * Si dice quante e quali, mai che verranno escluse: l'esclusione automatica
+ * del gateway guarda tutto l'impianto e si ferma a venticinque, quindi i due
+ * insiemi non sono lo stesso.
+ */
+function testoZoneAperte(quante, nomi) {
+  const testa = `${quante} ${quante === 1 ? "zona aperta" : "zone aperte"}`;
+  if (!nomi.length) return testa;
+  const primi = nomi.slice(0, 3);
+  const resto = nomi.length - primi.length;
+  // «e altre 1» e' la frase che tradisce il programma: al singolare si dice
+  // «e un'altra», e con tre nomi si scrivono tutti e tre invece di troncare
+  // per guadagnare due parole.
+  const coda = resto === 0 ? "" : resto === 1 ? " e un'altra" : ` e altre ${resto}`;
+  return `${testa}: ${primi.join(", ")}${coda}`;
+}
+
+/** Perche' il gateway non ha eseguito, con i nomi quando li manda.
+ *
+ * Il rifiuto per zone aperte esiste solo se sul gateway e' acceso il modo
+ * d'inserimento 4. Con l'esclusione automatica - l'impostazione normale - qui
+ * non arriva niente, perche' l'impianto si inserisce.
+ */
+function testoRifiuto(rifiuto) {
+  if (rifiuto.esito === "zone_aperte") {
+    const nomi = Array.isArray(rifiuto.zone_aperte) ? rifiuto.zone_aperte : [];
+    return nomi.length
+      ? `non inserito, ${testoZoneAperte(nomi.length, nomi)}`
+      : "non inserito: ci sono zone aperte";
+  }
+  return TESTI_ESITO[rifiuto.esito] || `comando non eseguito (${rifiuto.esito})`;
+}
+
 function iconaEvento(descrizione) {
   for (const [parola, icona] of ICONE_EVENTO) if (parola.test(descrizione)) return icona;
   return ICONA_EVENTO;
@@ -631,7 +681,8 @@ class NexusTecnoalarmAllarme extends HTMLElement {
 
     this._disegnaAllarme(mappa);
     this._disegnaProgrammi(mappa);
-    this._disegnaTastierino(mappa);
+    this._disegnaMessaggio();
+    this._disegnaDialogo();
     this._disegnaZone(mappa);
     this._disegnaTelecomandi(mappa);
     this._disegnaMemorie(mappa);
@@ -660,6 +711,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       mappa.memorie,
       this._idRegistro,
       ...(mappa.programmi || []).map((p) => p.entity_id),
+      ...(mappa.programmi || []).map((p) => p.zone_aperte),
       ...(mappa.zone || []).map((z) => z.entity_id),
       ...(mappa.telecomandi || []).map((t) => t.entity_id),
     ];
@@ -701,12 +753,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     card.appendChild(this._el.banner);
 
     card.appendChild(this._costruisciProgrammi(mappa));
-    card.appendChild(this._costruisciTastierino(mappa));
     card.appendChild(this._costruisciZone(mappa));
     card.appendChild(this._costruisciTelecomandi(mappa));
     card.appendChild(this._costruisciMemorie(mappa));
     card.appendChild(this._costruisciRegistro());
-    card.appendChild(this._costruisciConferma());
+    card.appendChild(this._costruisciDialogo());
 
     this._radice.appendChild(card);
     this._firmaDisinseribili = null;
@@ -720,32 +771,59 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     for (const programma of programmi) {
       const icona = el("ha-state-icon");
       const stato = el("span", { classe: "stato-testo" });
+      // Un pulsante solo per riga: inserisce se il programma e' disinserito,
+      // apre il dialogo del codice se e' inserito. Due pulsanti affiancati su
+      // una riga stretta si premono l'uno per l'altro.
       const bottone = el("button", {
         classe: "azione",
         type: "button",
         testo: "Inserisci",
-        "aria-label": `Inserisci ${programma.nome}`,
-        onclick: () => this._inserisci(programma),
+        onclick: () => this._azioneProgramma(programma),
       });
+      const zoneAperte = el("span", { classe: "zone-aperte", hidden: true });
       const riga = el("div", { classe: "prog" }, [
         icona,
-        el("div", { classe: "testi" }, [el("span", { classe: "nome", testo: programma.nome }), stato]),
+        el("div", { classe: "testi" }, [
+          el("span", { classe: "nome", testo: programma.nome }),
+          stato,
+          zoneAperte,
+        ]),
         bottone,
       ]);
       contenitore.appendChild(riga);
-      this._el.programmi.set(programma.entity_id, { riga, icona, stato, bottone });
+      this._el.programmi.set(programma.entity_id, { riga, icona, stato, bottone, zoneAperte });
     }
+
+    // I messaggi stanno qui, sotto i programmi: e' di loro che parlano quasi
+    // sempre. Quelli del disinserimento li mostra il dialogo, che nel frattempo
+    // copre la scheda.
+    this._el.messaggio = el("div", { classe: "messaggio", "aria-live": "assertive" });
 
     const blocco = el("section", { classe: "blocco", hidden: programmi.length === 0 }, [
       el("div", { classe: "intestazione" }, [el("h3", { testo: "Programmi" })]),
       contenitore,
+      this._el.messaggio,
     ]);
     return blocco;
   }
 
-  _costruisciTastierino(mappa) {
-    const programmi = mappa.programmi || [];
+  /** Il pulsante della riga: cosa fa dipende da com'e' il programma adesso. */
+  _azioneProgramma(programma) {
+    const stato = this._hass.states[programma.entity_id];
+    if (disinseribile(stato)) return this._chiediDisinserimento(programma);
+    if (categoriaProgramma(stato) === "disinserito") return this._inserisci(programma);
+    return undefined;
+  }
 
+  /**
+   * Il corpo del dialogo di disinserimento: schermo del codice, tastierino e
+   * i pulsanti dei programmi da disinserire.
+   *
+   * Non sta piu' fisso sotto i programmi: un tastierino sempre in vista occupa
+   * mezza scheda per un'operazione che si fa due volte al giorno, e invita a
+   * digitare il codice anche quando non serve.
+   */
+  _costruisciCorpoDisinserimento() {
     this._el.codice = el("div", { classe: "codice vuoto", "aria-live": "polite" });
 
     const tastierino = el("div", { classe: "tastierino" });
@@ -763,15 +841,8 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     });
 
     this._el.disinserimenti = el("div", { classe: "disinserimenti" });
-    this._el.messaggio = el("div", { classe: "messaggio", "aria-live": "assertive" });
 
-    return el("section", { classe: "blocco", hidden: programmi.length === 0 }, [
-      el("div", { classe: "intestazione" }, [el("h3", { testo: "Disinserimento" })]),
-      this._el.codice,
-      tastierino,
-      this._el.disinserimenti,
-      this._el.messaggio,
-    ]);
+    return [this._el.codice, tastierino, this._el.disinserimenti];
   }
 
   _costruisciZone(mappa) {
@@ -870,27 +941,62 @@ class NexusTecnoalarmAllarme extends HTMLElement {
 
   /** Il velo della conferma: creato una volta e nascosto, non si aggiunge e
    * toglie dal documento a ogni pressione. */
-  _costruisciConferma() {
-    const chiudi = (conferma) => {
-      this._el.velo.hidden = true;
-      if (conferma) this._azzeraMemorie();
-    };
+  /**
+   * Il velo modale, vuoto: lo riempiono i tre che lo usano.
+   *
+   * Uno solo per tutti - azzeramento memorie, rifiuto dell'inserimento,
+   * disinserimento - perche' due dialoghi aperti insieme non devono poter
+   * esistere, e con un velo solo e' impossibile per costruzione.
+   */
+  _costruisciDialogo() {
+    const titolo = el("h5");
+    const corpo = el("div", { classe: "corpo-dialogo" });
+    const messaggio = el("div", { classe: "messaggio", "aria-live": "assertive" });
+    const azioni = el("div", { classe: "azioni-dialogo" });
     const velo = el("div", { classe: "velo", hidden: true, onclick: (evento) => {
-      if (evento && evento.target === velo) chiudi(false);
+      // Solo il velo, non il riquadro: un tocco dentro il dialogo non lo chiude.
+      if (evento && evento.target === velo) this._chiudiDialogo();
     } }, [
-      el("div", { classe: "dialogo", role: "dialog", "aria-modal": "true" }, [
-        el("h5", { testo: "Azzerare le memorie di allarme?" }),
-        el("p", { testo: "Si azzerano allarme di zona e di programma, batteria, rete elettrica, codice o chiave falsa, collegamenti LAN e GSM." }),
-        el("p", { testo: "Non si azzerano manomissione, errore e guasto: quelle chiedono il codice installatore e si cancellano dalla tastiera della centrale." }),
-        el("p", { testo: "Gli eventi restano nel registro; le memorie a schermo e sulla tastiera no." }),
-        el("div", { classe: "azioni-dialogo" }, [
-          el("button", { classe: "annulla", type: "button", testo: "Annulla", onclick: () => chiudi(false) }),
-          el("button", { classe: "pericolo", type: "button", testo: "Azzera", onclick: () => chiudi(true) }),
-        ]),
-      ]),
+      el("div", { classe: "dialogo", role: "dialog", "aria-modal": "true" },
+        [titolo, corpo, messaggio, azioni]),
     ]);
+    this._el.dialogo = { velo, titolo, corpo, messaggio, azioni };
     this._el.velo = velo;
     return velo;
+  }
+
+  _apriDialogo({ titolo, corpo = [], azioni = [], suChiusura = null }) {
+    const d = this._el && this._el.dialogo;
+    if (!d) return;
+    d.titolo.textContent = titolo;
+    d.corpo.replaceChildren(...corpo);
+    d.azioni.replaceChildren(
+      ...azioni.map((a) => el("button", {
+        classe: a.classe || "annulla", type: "button", testo: a.etichetta, onclick: a.onclick,
+      }))
+    );
+    d.messaggio.textContent = "";
+    delete d.messaggio.dataset.tono;
+    this._suChiusura = suChiusura;
+    d.velo.hidden = false;
+  }
+
+  _chiudiDialogo() {
+    const d = this._el && this._el.dialogo;
+    if (!d || d.velo.hidden) return;
+    d.velo.hidden = true;
+    d.titolo.textContent = "";
+    d.corpo.replaceChildren();
+    d.azioni.replaceChildren();
+    // I pezzi del tastierino sono appena stati staccati: tenerne il riferimento
+    // vorrebbe dire disegnare su nodi che non sono piu' in pagina.
+    this._el.codice = null;
+    this._el.tasti = null;
+    this._el.disinserimenti = null;
+    this._firmaDisinseribili = null;
+    const finita = this._suChiusura;
+    this._suChiusura = null;
+    if (finita) finita();
   }
 
   _costruisciRegistro() {
@@ -935,13 +1041,76 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       // Il pulsante c'e' solo a programma disinserito: da inserito si
       // disinserisce dal tastierino, con il codice.
       if (categoria !== "disinserito") this._inInserimento.delete(programma.entity_id);
-      voce.bottone.hidden = categoria !== "disinserito";
-      voce.bottone.disabled = this._inInserimento.has(programma.entity_id);
+
+      const puoDisinserire = disinseribile(stato);
+      voce.bottone.hidden = !(categoria === "disinserito" || puoDisinserire);
+      voce.bottone.textContent = puoDisinserire ? "Disinserisci" : "Inserisci";
+      voce.bottone.setAttribute("aria-label", `${voce.bottone.textContent} ${programma.nome}`);
+      voce.bottone.classList.toggle("secondaria", puoDisinserire);
+      voce.bottone.disabled = this._occupato || this._inInserimento.has(programma.entity_id);
+
+      this._disegnaZoneAperte(voce, programma);
     }
+
+    this._verificaInserimenti();
   }
 
-  _disegnaTastierino(mappa) {
-    if (!this._el) return;
+  /** La spia «zone aperte» del programma (gateway V0.8.55).
+   *
+   * Conta solo le zone istantanee: le ritardate, le interne e quelle isolate
+   * non l'accendono, quindi non si scrive mai «tutto chiuso» — sarebbe smentito
+   * dall'utente con la porta aperta in mano. Spenta: niente, e la riga resta
+   * pulita. Non disponibile: lo si dice. La spia scade dopo un minuto di
+   * silenzio del gateway, e quel silenzio non deve leggersi come «si puo'
+   * inserire»; vale anche nei primi secondi dopo un riavvio di Home Assistant.
+   */
+  _disegnaZoneAperte(voce, programma) {
+    const riquadro = voce.zoneAperte;
+    if (!riquadro) return;
+    if (!programma.zone_aperte) {
+      riquadro.hidden = true;
+      return;
+    }
+
+    const spia = this._hass.states[programma.zone_aperte];
+    if (!spia || assente(spia)) {
+      riquadro.hidden = false;
+      riquadro.dataset.tono = "ignoto";
+      riquadro.textContent = "zone aperte: non noto";
+      return;
+    }
+    if (spia.state !== "on") {
+      riquadro.hidden = true;
+      return;
+    }
+
+    const nomi = Array.isArray(spia.attributes.zone_aperte) ? spia.attributes.zone_aperte : [];
+    const quante = Number(spia.attributes.totale) || nomi.length;
+    riquadro.hidden = false;
+    riquadro.dataset.tono = "aperte";
+    riquadro.textContent = testoZoneAperte(quante, nomi);
+  }
+
+  _disegnaMessaggio() {
+    if (!this._el || !this._el.messaggio) return;
+    const messaggio = this._messaggio;
+    for (const nodo of [this._el.messaggio, this._el.dialogo && this._el.dialogo.messaggio]) {
+      if (!nodo) continue;
+      nodo.textContent = messaggio ? messaggio.testo : "";
+      if (messaggio) nodo.dataset.tono = messaggio.tono;
+      else delete nodo.dataset.tono;
+    }
+    // Vuoto, sotto i programmi, lascerebbe un buco: nel dialogo invece lo
+    // spazio si tiene, o la finestra sobbalza quando compare il messaggio.
+    this._el.messaggio.hidden = !messaggio;
+  }
+
+  /** Il dialogo di disinserimento, quando e' aperto. */
+  _disegnaDialogo() {
+    if (!this._el || !this._el.dialogo || this._el.dialogo.velo.hidden) return;
+    this._disegnaMessaggio();
+    if (!this._el.codice) return;
+
     const cifre = this._codice.length;
 
     this._el.codice.classList.toggle("vuoto", cifre === 0);
@@ -953,48 +1122,72 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     );
     this._el.tasti.forEach((tasto) => { tasto.disabled = this._occupato; });
 
-    const disinseribili = (mappa.programmi || []).filter((p) => disinseribile(this._hass.states[p.entity_id]));
-    const firma = disinseribili.map((p) => p.entity_id).join(",");
+    const disinseribili = this._disinseribiliOra();
+    const scelto = this._sceltoDisinserimento;
+    const firma = [scelto && scelto.entity_id, ...disinseribili.map((p) => p.entity_id)].join(",");
 
     if (firma !== this._firmaDisinseribili) {
       this._firmaDisinseribili = firma;
       this._el.disinserimenti.replaceChildren();
 
+      // Per primo quello da cui sei entrato: e' quello che volevi, ed e' sotto
+      // il dito. «Tutto» subito dopo, sempre nello stesso posto.
+      const ancoraInserito = scelto && disinseribili.some((p) => p.entity_id === scelto.entity_id);
+      if (ancoraInserito) {
+        this._el.disinserimenti.appendChild(el("button", {
+          classe: "azione", type: "button", testo: `Disinserisci ${scelto.nome}`,
+          onclick: () => this._disinserisci([scelto]),
+        }));
+      }
+      if (disinseribili.length > 1) {
+        this._el.disinserimenti.appendChild(el("button", {
+          classe: "azione secondaria", type: "button", testo: "Disinserisci tutto",
+          onclick: () => this._disinserisci(this._disinseribiliOra()),
+        }));
+      }
+      for (const programma of disinseribili) {
+        if (ancoraInserito && programma.entity_id === scelto.entity_id) continue;
+        this._el.disinserimenti.appendChild(el("button", {
+          classe: "azione secondaria", type: "button", testo: `Disinserisci ${programma.nome}`,
+          onclick: () => this._disinserisci([programma]),
+        }));
+      }
       if (disinseribili.length === 0) {
-        this._el.disinserimenti.appendChild(el("div", { classe: "nota", testo: "Nessun programma inserito." }));
-      } else {
-        // «Tutto» sempre per primo e sempre nello stesso posto, anche con un
-        // solo programma inserito: in un'interfaccia d'allarme la posizione
-        // prevedibile conta piu' dell'eleganza.
         this._el.disinserimenti.appendChild(
-          el("button", {
-            classe: "azione",
-            type: "button",
-            testo: "Disinserisci tutto",
-            onclick: () => this._disinserisci(this._disinseribiliOra()),
-          })
+          el("div", { classe: "nota", testo: "Nessun programma inserito." })
         );
-        for (const programma of disinseribili) {
-          this._el.disinserimenti.appendChild(
-            el("button", {
-              classe: "azione secondaria",
-              type: "button",
-              testo: `Disinserisci ${programma.nome}`,
-              onclick: () => this._disinserisci([programma]),
-            })
-          );
-        }
       }
     }
 
     this._el.disinserimenti.querySelectorAll("button").forEach((bottone) => {
       bottone.disabled = this._occupato || cifre === 0;
     });
+  }
 
-    const messaggio = this._messaggio;
-    this._el.messaggio.textContent = messaggio ? messaggio.testo : "";
-    if (messaggio) this._el.messaggio.dataset.tono = messaggio.tono;
-    else delete this._el.messaggio.dataset.tono;
+  /**
+   * Apre il dialogo del codice, partendo dal programma su cui hai premuto.
+   *
+   * Il codice non si porta dietro da un'apertura all'altra: resta nel dialogo
+   * e muore con lui.
+   */
+  _chiediDisinserimento(scelto) {
+    if (this._occupato) return;
+    this._codice = "";
+    clearTimeout(this._timerCodice);
+    this._messaggio = null;
+    this._sceltoDisinserimento = scelto;
+    this._firmaDisinseribili = null;
+    this._apriDialogo({
+      titolo: "Disinserimento",
+      corpo: this._costruisciCorpoDisinserimento(),
+      azioni: [{ etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() }],
+      suChiusura: () => {
+        this._codice = "";
+        clearTimeout(this._timerCodice);
+        this._sceltoDisinserimento = null;
+      },
+    });
+    this._disegnaDialogo();
   }
 
   _disinseribiliOra() {
@@ -1089,7 +1282,18 @@ class NexusTecnoalarmAllarme extends HTMLElement {
   }
 
   _chiediAzzeraMemorie() {
-    if (this._el && this._el.velo) this._el.velo.hidden = false;
+    this._apriDialogo({
+      titolo: "Azzerare le memorie di allarme?",
+      corpo: [
+        el("p", { testo: "Si azzerano allarme di zona e di programma, batteria, rete elettrica, codice o chiave falsa, collegamenti LAN e GSM." }),
+        el("p", { testo: "Non si azzerano manomissione, errore e guasto: quelle chiedono il codice installatore e si cancellano dalla tastiera della centrale." }),
+        el("p", { testo: "Gli eventi restano nel registro; le memorie a schermo e sulla tastiera no." }),
+      ],
+      azioni: [
+        { etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() },
+        { etichetta: "Azzera", classe: "pericolo", onclick: () => { this._chiudiDialogo(); this._azzeraMemorie(); } },
+      ],
+    });
   }
 
   _azzeraMemorie() {
@@ -1173,19 +1377,156 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._inInserimento.add(programma.entity_id);
     this._disegnaProgrammi(this._mappa());
 
+    // Il ts del rifiuto PRIMA di mandare il comando: serve a distinguere la
+    // risposta a questo tentativo da un rifiuto vecchio rimasto nella mappa.
+    const tsPrima = this._tsRifiuto(programma.numero);
+
     try {
       await this._hass.callService("alarm_control_panel", "alarm_arm_away", {
         entity_id: programma.entity_id,
       });
     } catch (errore) {
       this._mostra(`${programma.nome}: ${testoErrore(errore)}`, "allarme");
+      this._inInserimento.delete(programma.entity_id);
+      this._disegnaProgrammi(this._mappa());
+      return;
     }
+
+    this._osservaInserimento(programma, tsPrima);
 
     setTimeout(() => {
       this._inInserimento.delete(programma.entity_id);
       this._firmaStati = null;
       this._aggiorna();
     }, ATTESA_INSERIMENTO_MS);
+  }
+
+  /**
+   * Tiene d'occhio un inserimento appena mandato, per dirlo se viene rifiutato.
+   *
+   * L'inserimento non ha un esito come il disinserimento: la risposta normale
+   * e' il programma che passa a inserito. Ma con il modo 4 del gateway -
+   * «rifiuta se ci sono zone aperte» - puo' tornare un rifiuto, e senza questo
+   * il pulsante tornerebbe al suo posto senza che nulla spieghi perche'
+   * l'impianto e' rimasto disinserito.
+   *
+   * Uno per programma, cosi' due inserimenti ravvicinati non si rubano
+   * l'attesa a vicenda come farebbe uno slot solo.
+   */
+  _osservaInserimento(programma, tsPrima) {
+    if (!this._attesiInserimento) this._attesiInserimento = new Map();
+    this._chiudiInserimento(programma.entity_id);
+    this._attesiInserimento.set(programma.entity_id, {
+      programma,
+      numero: programma.numero,
+      nome: programma.nome,
+      tsPrima,
+      scadenza: setTimeout(() => this._chiudiInserimento(programma.entity_id), ATTESA_ESITO_MS),
+    });
+    this._verificaInserimenti();
+  }
+
+  _chiudiInserimento(entityId) {
+    const attesa = this._attesiInserimento && this._attesiInserimento.get(entityId);
+    if (!attesa) return;
+    clearTimeout(attesa.scadenza);
+    this._attesiInserimento.delete(entityId);
+  }
+
+  _verificaInserimenti() {
+    if (!this._attesiInserimento || this._attesiInserimento.size === 0 || !this._hass) return;
+    for (const [entityId, attesa] of [...this._attesiInserimento]) {
+      const stato = this._hass.states[entityId];
+      // Inserito, o in tempo d'uscita: ha funzionato, non c'e' niente da dire.
+      if (stato && !assente(stato) && stato.state !== "disarmed") {
+        this._chiudiInserimento(entityId);
+        continue;
+      }
+      const rifiuto = (this._mappa().rifiuti || {})[String(attesa.numero)];
+      if (rifiuto && rifiuto.ts !== attesa.tsPrima) {
+        this._chiudiInserimento(entityId);
+        this._offriRifiuto(attesa, rifiuto);
+      }
+    }
+  }
+
+  /**
+   * Il rifiuto, e - solo per le zone aperte - il modo di passare oltre.
+   *
+   * Lo scavalco non e' una riga fissa della scheda di proposito: compare qui,
+   * dentro il messaggio che dice quale finestra e' aperta, e se ne va con lui.
+   * Premerlo arma la casa con una zona esclusa, e un pulsante sempre a portata
+   * di dito si finisce per premerlo senza leggere.
+   */
+  _offriRifiuto(attesa, rifiuto) {
+    const interruttore = this._mappa().consenti_zone_aperte;
+    if (rifiuto.esito !== "zone_aperte" || !interruttore) {
+      this._mostra(`${attesa.nome}: ${testoRifiuto(rifiuto)}`, "allarme");
+      return;
+    }
+    const nomi = Array.isArray(rifiuto.zone_aperte) ? rifiuto.zone_aperte : [];
+    this._apriDialogo({
+      titolo: `${attesa.nome} non inserito`,
+      corpo: [
+        el("p", { classe: "forte",
+          testo: nomi.length ? testoZoneAperte(nomi.length, nomi) : "Ci sono zone aperte." }),
+        el("p", { testo: "Inserendo comunque la centrale le esclude: restano fuori sorveglianza fino al prossimo disinserimento." }),
+      ],
+      azioni: [
+        { etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() },
+        { etichetta: "Inserisci comunque", classe: "pericolo", onclick: () => {
+          this._chiudiDialogo();
+          this._inserisciComunque(attesa.programma, interruttore);
+        } },
+      ],
+    });
+  }
+
+  /**
+   * Accende lo scavalco e rimanda l'inserimento.
+   *
+   * Prima l'interruttore, poi il comando, e in mezzo si aspetta che il gateway
+   * confermi: mandati insieme, l'inserimento puo' arrivare per primo e farsi
+   * rifiutare un'altra volta. Se la conferma non arriva si manda lo stesso -
+   * un rifiuto in piu' lo si vede, un pulsante che non fa niente no.
+   *
+   * Lo scavalco lo spegne il gateway da se', dopo cinque minuti o dopo un
+   * inserimento: non si spegne di qui, o due schede aperte se lo toglierebbero
+   * di mano a vicenda.
+   */
+  async _inserisciComunque(programma, interruttore) {
+    if (!programma) return;
+    this._mostra("Scavalco in corso…", "neutro", 0);
+
+    try {
+      await this._hass.callService("switch", "turn_on", { entity_id: interruttore });
+    } catch (errore) {
+      this._mostra(`${programma.nome}: ${testoErrore(errore)}`, "allarme");
+      return;
+    }
+
+    await this._attendiInterruttore(interruttore);
+    this._messaggio = null;
+    // L'attesa di sei secondi del tentativo di prima e' ancora in piedi: senza
+    // toglierla di mezzo il comando nuovo verrebbe scartato come doppione.
+    this._inInserimento.delete(programma.entity_id);
+    await this._inserisci(programma);
+  }
+
+  _attendiInterruttore(interruttore) {
+    // Si contano i giri invece di guardare l'orologio: il tempo di attesa
+    // dipende cosi' solo dai timer, che e' l'unica cosa che una prova a
+    // tavolino puo' far scorrere.
+    return new Promise((risolvi) => {
+      let restanti = Math.ceil(ATTESA_SCAVALCO_MS / PASSO_SCAVALCO_MS);
+      const guarda = () => {
+        const stato = this._hass && this._hass.states[interruttore];
+        if (stato && stato.state === "on") return risolvi(true);
+        if (restanti-- <= 0) return risolvi(false);
+        setTimeout(guarda, PASSO_SCAVALCO_MS);
+      };
+      guarda();
+    });
   }
 
   async _commuta(telecomando) {
@@ -1206,10 +1547,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     if (this._codice) {
       this._timerCodice = setTimeout(() => {
         this._codice = "";
-        this._disegnaTastierino(this._mappa());
+        this._disegnaDialogo();
       }, SCADENZA_CODICE_MS);
     }
-    this._disegnaTastierino(this._mappa());
+    this._disegnaDialogo();
   }
 
   /**
@@ -1225,6 +1566,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._occupato = true;
     this._mostra("Disinserimento in corso…", "neutro", 0);
     let riusciti = 0;
+    let riuscito = false;
 
     try {
       for (const programma of programmi) {
@@ -1254,11 +1596,18 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       }
 
       this._mostra(riusciti > 1 ? `${riusciti} programmi disinseriti` : "Disinserito", "ok");
+      riuscito = true;
     } finally {
       this._codice = "";
       clearTimeout(this._timerCodice);
       this._occupato = false;
-      this._disegnaTastierino(this._mappa());
+      // Andata bene: il dialogo si toglie di mezzo e il messaggio resta sotto
+      // i programmi. Andata male: resta aperto, cosi' si ridigita senza
+      // ricominciare dalla riga.
+      if (riuscito) this._chiudiDialogo();
+      else this._disegnaDialogo();
+      this._disegnaMessaggio();
+      this._disegnaProgrammi(this._mappa());
     }
   }
 
@@ -1321,10 +1670,11 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     if (durata > 0) {
       this._timerMessaggio = setTimeout(() => {
         this._messaggio = null;
-        this._disegnaTastierino(this._mappa());
+        this._disegnaMessaggio();
       }, durata);
     }
-    this._disegnaTastierino(this._mappa());
+    this._disegnaMessaggio();
+    this._disegnaDialogo();
   }
 }
 

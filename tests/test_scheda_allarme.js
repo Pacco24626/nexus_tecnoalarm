@@ -158,6 +158,12 @@ function stato(entity_id, valore, attributi = {}) {
 // vecchi le due chiavi non ci sono proprio.
 let memorieNellaMappa = false;
 
+// Le spie «zone aperte» arrivano dalla V0.8.55: {numero: {stato, zone, totale}}.
+let spieNellaMappa = {};
+
+// L'interruttore di scavalco, anche lui dalla V0.8.55.
+let scavalcoNellaMappa = false;
+
 function statoMappa(rifiuti = {}) {
   return stato(MAPPA, "5", {
     ruolo: "mappa_allarme",
@@ -165,21 +171,27 @@ function statoMappa(rifiuti = {}) {
       ? { azzera_memorie: "button.azzera_memorie", memorie: "binary_sensor.memorie" }
       : {}),
     dispositivo_trovato: true,
-    programmi: [TOTALE, NOTTE],
+    programmi: [TOTALE, NOTTE].map((p) => ({
+      ...p,
+      zone_aperte: spieNellaMappa[p.numero] ? `binary_sensor.zoneap_${p.numero}` : null,
+    })),
     zone: [
       { numero: 1, entity_id: "binary_sensor.porta", nome: "Porta" },
       { numero: 2, entity_id: "binary_sensor.finestra", nome: "Finestra" },
     ],
     telecomandi: [{ numero: 1, entity_id: "switch.luce", nome: "Luce" }],
     allarme_generale: "binary_sensor.allarme",
+    ...(scavalcoNellaMappa ? { consenti_zone_aperte: "switch.consenti" } : {}),
     rifiuti,
   });
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
+  spieNellaMappa = spie || {};
+  scavalcoNellaMappa = Boolean(scavalco);
   const chiamate = [];
   const scheda = new Scheda();
   const casa = {
@@ -197,6 +209,20 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
   if (memorie !== undefined) {
     casa.stati["binary_sensor.memorie"] = stato("binary_sensor.memorie", memorie, { device_class: "problem" });
     casa.stati["button.azzera_memorie"] = stato("button.azzera_memorie", "unknown");
+  }
+
+  if (scavalcoNellaMappa) casa.stati["switch.consenti"] = stato("switch.consenti", "off");
+
+  for (const [numero, spia] of Object.entries(spieNellaMappa)) {
+    const id = `binary_sensor.zoneap_${numero}`;
+    const nomi = spia.zone || [];
+    casa.stati[id] = stato(id, spia.stato, {
+      ruolo: "zone_aperte_programma",
+      programma: Number(numero),
+      device_class: "problem",
+      zone_aperte: nomi,
+      totale: spia.totale === undefined ? nomi.length : spia.totale,
+    });
   }
 
   // Il registro eventi: entita' con un identificativo qualunque, perche' la
@@ -237,18 +263,45 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
     casa.stati[entita] = stato(entita, valore, casa.stati[entita].attributes);
     pubblica();
   }, 1000);
-  const rifiuta = (numero, esito, ts) => impostaTimer(() => {
+  const rifiuta = (numero, esito, ts, extra = {}) => impostaTimer(() => {
     const vecchi = casa.stati[MAPPA].attributes.rifiuti || {};
-    casa.stati[MAPPA] = statoMappa({ ...vecchi, [String(numero)]: { esito, programma: numero, ts } });
+    casa.stati[MAPPA] = statoMappa({
+      ...vecchi,
+      [String(numero)]: { esito, programma: numero, ts, ...extra },
+    });
     pubblica();
   }, 1000);
 
   scheda.setConfig({ entity: MAPPA });
   pubblica();
-  return { scheda, chiamate };
+  return { scheda, chiamate, casa, pubblica };
 }
 
-function digita(scheda, codice) { for (const cifra of codice) scheda._premi(cifra); }
+/** Digita il codice come l'utente: se il dialogo non c'e', lo apre dalla riga. */
+function digita(scheda, codice, programma = TOTALE) {
+  if (scheda._el.dialogo.velo.hidden) apriDisinserimento(scheda, programma);
+  for (const cifra of codice) scheda._premi(cifra);
+}
+/** Il pulsante della riga: con il programma inserito apre il dialogo del codice. */
+function apriDisinserimento(scheda, programma = TOTALE) {
+  scheda._el.programmi.get(programma.entity_id).bottone.click();
+}
+function azioneDialogo(scheda, etichetta) {
+  return scheda._el.dialogo.azioni.figli.find((b) => b.textContent === etichetta);
+}
+function tastiDisinserimento(scheda) {
+  return scheda._el.disinserimenti ? scheda._el.disinserimenti.figli.map((b) => b.textContent) : [];
+}
+/** La riga del programma: elemento della spia, testo, tono, bottone. */
+function rigaProgramma(scheda, programma) {
+  const voce = scheda._el.programmi.get(programma.entity_id);
+  return {
+    spia: voce.zoneAperte,
+    testo: voce.zoneAperte.hidden ? "" : voce.zoneAperte.textContent,
+    tono: voce.zoneAperte.dataset.tono,
+    bottone: voce.bottone,
+  };
+}
 function messaggio(scheda) { return scheda._messaggio ? scheda._messaggio.testo : ""; }
 function bottoni(scheda) {
   return scheda._radice.tutti().filter((n) => n.tagName === "BUTTON");
@@ -391,14 +444,73 @@ async function prove() {
       JSON.stringify(chiamate));
   }
 
-  // 11. pulsanti di disinserimento solo per i programmi inseriti
+  // 11. il dialogo del disinserimento
   {
+    // Un programma solo inserito: niente «tutto», sarebbe lo stesso pulsante
+    // scritto due volte.
     const { scheda } = prepara({ totale: "armed_away", notte: "disarmed" });
-    const testi = scheda._el.disinserimenti.figli.map((b) => b.textContent);
-    verifica("disinserimento: «tutto» e il solo programma inserito",
-      testi.join("|") === "Disinserisci tutto|Disinserisci Totale", testi.join("|"));
-    verifica("disinserimento: pulsanti spenti finche' manca il codice",
+    verifica("a riposo il dialogo e' chiuso", scheda._el.dialogo.velo.hidden === true);
+    apriDisinserimento(scheda);
+    verifica("il pulsante della riga apre il dialogo",
+      scheda._el.dialogo.velo.hidden === false && Boolean(scheda._el.codice));
+    verifica("un solo programma inserito: nessun «tutto»",
+      tastiDisinserimento(scheda).join("|") === "Disinserisci Totale",
+      tastiDisinserimento(scheda).join("|"));
+    verifica("pulsanti spenti finche' manca il codice",
       scheda._el.disinserimenti.figli.every((b) => b.disabled === true));
+  }
+  {
+    // Due inseriti: prima quello da cui sei entrato, poi «tutto», poi l'altro.
+    const { scheda } = prepara({ totale: "armed_away", notte: "armed_away" });
+    apriDisinserimento(scheda, NOTTE);
+    verifica("si entra da Notte: Notte per primo, poi tutto, poi Totale",
+      tastiDisinserimento(scheda).join("|")
+        === "Disinserisci Notte|Disinserisci tutto|Disinserisci Totale",
+      tastiDisinserimento(scheda).join("|"));
+  }
+  {
+    // Annulla: via il dialogo e via il codice gia' digitato.
+    const { scheda, chiamate } = prepara({ totale: "armed_away" });
+    digita(scheda, "1234");
+    azioneDialogo(scheda, "Annulla").click();
+    verifica("Annulla: dialogo chiuso, codice dimenticato, nessun comando",
+      scheda._el.dialogo.velo.hidden === true && scheda._codice === "" && chiamate.length === 0,
+      `${scheda._codice}/${chiamate.length}`);
+  }
+  {
+    // Il tastierino non sta piu' nel corpo della scheda.
+    const { scheda } = prepara({ totale: "armed_away" });
+    verifica("niente tastierino fisso sotto i programmi",
+      scheda._radice.tutti().filter((n) => n.className === "tasto").length === 0);
+  }
+  {
+    // Riuscito: il dialogo si toglie di mezzo da solo.
+    const { scheda } = prepara({
+      totale: "armed_away",
+      gateway: ({ cambia }) => cambia(TOTALE.entity_id, "disarmed"),
+    });
+    digita(scheda, "1234");
+    scheda._el.disinserimenti.figli[0].click();
+    await svuota();
+    await avanza(1500);
+    verifica("disinserito: il dialogo si chiude e il messaggio resta sotto",
+      scheda._el.dialogo.velo.hidden === true && messaggio(scheda) === "Disinserito",
+      messaggio(scheda));
+  }
+  {
+    // Codice errato: il dialogo resta aperto, cosi' si ridigita senza
+    // ricominciare dalla riga del programma.
+    const { scheda } = prepara({
+      totale: "armed_away",
+      gateway: ({ rifiuta }) => rifiuta(1, "codice_errato", 950),
+    });
+    digita(scheda, "9999");
+    scheda._el.disinserimenti.figli[0].click();
+    await svuota();
+    await avanza(1500);
+    verifica("codice errato: dialogo aperto e codice azzerato",
+      scheda._el.dialogo.velo.hidden === false && scheda._codice === ""
+      && messaggio(scheda) === "Codice errato", messaggio(scheda));
   }
 
   // 12. filtro delle zone aperte
@@ -568,7 +680,283 @@ async function prove() {
       chiamate.length === 1 && messaggio(scheda) === "Comando inviato", messaggio(scheda));
   }
 
-  // 16. mappa senza centrale
+  // 16. spia «zone aperte» per programma
+  {
+    // Programma disinserito con due zone istantanee aperte: si dice quante e
+    // quali, e il pulsante resta premibile — la centrale le esclude da se'.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: ["FINESTRA CUCINA", "FIN.BAGNO P.T."] }, 2: { stato: "off" } },
+    });
+    const riga = rigaProgramma(scheda, TOTALE);
+    verifica("zone aperte: quante e quali, in evidenza",
+      riga.testo === "2 zone aperte: FINESTRA CUCINA, FIN.BAGNO P.T." && riga.tono === "aperte",
+      riga.testo);
+    verifica("zone aperte: l'inserimento resta possibile",
+      riga.bottone.hidden === false && riga.bottone.disabled === false);
+    // Sulle righe dei programmi, non in tutta la radice: il foglio di stile
+    // nomina l'esclusione in un commento, e li' e' una spiegazione per chi
+    // legge il codice, non una promessa all'utente.
+    verifica("zone aperte: non si promette l'esclusione",
+      !/esclus/i.test(scheda._el.programmi.get(TOTALE.entity_id).riga.textContent));
+  }
+  {
+    // Spenta: la riga resta pulita. Mai scrivere «tutto chiuso»: la spia conta
+    // solo le istantanee, e una ritardata aperta la lascia spenta.
+    const { scheda } = prepara({ totale: "disarmed", spie: { 1: { stato: "off" } } });
+    const riga = rigaProgramma(scheda, TOTALE);
+    verifica("spia spenta: niente sulla riga", riga.spia.hidden === true, riga.spia.textContent);
+    // Sulla riga, non in tutta la scheda: il blocco delle zone ha una sua
+    // scritta «Nessuna zona aperta», che li' e' giusta.
+    verifica("spia spenta: nessun «tutto chiuso» sulla riga",
+      !/chius|a posto|nessuna zona/i.test(
+        scheda._el.programmi.get(TOTALE.entity_id).riga.textContent));
+  }
+  {
+    // Scaduta per silenzio del gateway: lo si dice. Il silenzio non vale come
+    // «si puo' inserire».
+    const { scheda } = prepara({ totale: "disarmed", spie: { 1: { stato: "unavailable" } } });
+    const riga = rigaProgramma(scheda, TOTALE);
+    verifica("spia non disponibile: lo dice invece di tacere",
+      riga.testo === "zone aperte: non noto" && riga.tono === "ignoto", riga.testo);
+    verifica("spia non disponibile: l'inserimento resta possibile",
+      riga.bottone.hidden === false && riga.bottone.disabled === false);
+  }
+  {
+    // Gateway precedente alla V0.8.55: la spia non c'e' e non si vede nulla.
+    const { scheda } = prepara({ totale: "disarmed" });
+    const riga = rigaProgramma(scheda, TOTALE);
+    verifica("gateway vecchio: nessuna riga della spia", riga.spia.hidden === true);
+    verifica("gateway vecchio: niente 'undefined' nella scheda",
+      !/undefined|non noto/i.test(scheda._radice.textContent));
+  }
+  {
+    // Tante zone: non si allunga la riga all'infinito.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: ["UNO", "DUE", "TRE", "QUATTRO", "CINQUE"] } },
+    });
+    verifica("molte zone: elenco troncato con il conto del resto",
+      rigaProgramma(scheda, TOTALE).testo === "5 zone aperte: UNO, DUE, TRE e altre 2",
+      rigaProgramma(scheda, TOTALE).testo);
+  }
+  {
+    // Tre nomi: si scrivono tutti, invece di troncarne uno per due parole.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: ["UNO", "DUE", "TRE"] } },
+    });
+    verifica("tre zone: nessun troncamento",
+      rigaProgramma(scheda, TOTALE).testo === "3 zone aperte: UNO, DUE, TRE",
+      rigaProgramma(scheda, TOTALE).testo);
+  }
+  {
+    // Quattro: una sola avanza, e «e altre 1» non si legge in italiano.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: ["UNO", "DUE", "TRE", "QUATTRO"] } },
+    });
+    verifica("ne avanza una: «e un'altra», mai «e altre 1»",
+      rigaProgramma(scheda, TOTALE).testo === "4 zone aperte: UNO, DUE, TRE e un'altra",
+      rigaProgramma(scheda, TOTALE).testo);
+  }
+  {
+    // La spia che si spegne deve far ridisegnare la riga: se finisse fuori
+    // dalla firma degli stati, resterebbe scritto «2 zone aperte» con tutto
+    // chiuso.
+    const { scheda, casa, pubblica } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: ["UNO", "DUE"] } },
+    });
+    verifica("prima: la riga c'e'", rigaProgramma(scheda, TOTALE).testo.startsWith("2 zone"));
+    casa.stati["binary_sensor.zoneap_1"] = stato("binary_sensor.zoneap_1", "off", {
+      ...casa.stati["binary_sensor.zoneap_1"].attributes, zone_aperte: [], totale: 0,
+    });
+    pubblica();
+    verifica("zone chiuse: la riga sparisce subito",
+      rigaProgramma(scheda, TOTALE).spia.hidden === true,
+      rigaProgramma(scheda, TOTALE).spia.textContent);
+  }
+  {
+    // Una zona sola: in italiano, al singolare.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: ["PORTA INGRESSO"] } },
+    });
+    verifica("una sola: «1 zona aperta»",
+      rigaProgramma(scheda, TOTALE).testo === "1 zona aperta: PORTA INGRESSO",
+      rigaProgramma(scheda, TOTALE).testo);
+  }
+  {
+    // Spia accesa ma senza l'elenco dei nomi (gateway parlante a meta'):
+    // si dice il numero e basta, senza inventare nomi.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: [], totale: 3 } },
+    });
+    verifica("accesa senza nomi: solo il conto",
+      rigaProgramma(scheda, TOTALE).testo === "3 zone aperte",
+      rigaProgramma(scheda, TOTALE).testo);
+  }
+
+  // 17. inserimento rifiutato dal gateway (modo 4 «rifiuta se ci sono zone aperte»)
+  {
+    // Il pulsante torna al suo posto e l'impianto resta disinserito: senza un
+    // messaggio l'utente non ha modo di sapere perche'.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      notte: "armed_away",
+      spie: { 1: { stato: "on", zone: ["FINESTRA CUCINA", "PORTAFINESTRA SALOTTO"] } },
+      gateway: ({ servizio, rifiuta }) => {
+        if (servizio === "alarm_arm_away") {
+          rifiuta(1, "zone_aperte", 777, { zone_aperte: ["FINESTRA CUCINA", "PORTAFINESTRA SALOTTO"] });
+        }
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("inserimento rifiutato: si dice quali zone",
+      messaggio(scheda) === "Totale: non inserito, 2 zone aperte: FINESTRA CUCINA, PORTAFINESTRA SALOTTO",
+      messaggio(scheda));
+  }
+  {
+    // Rifiuto senza l'elenco dei nomi: si dice comunque che non e' inserito.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away",
+      gateway: ({ servizio, rifiuta }) => {
+        if (servizio === "alarm_arm_away") rifiuta(1, "zone_aperte", 778);
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("rifiuto senza nomi: niente elenco inventato",
+      messaggio(scheda) === "Totale: non inserito: ci sono zone aperte", messaggio(scheda));
+  }
+  {
+    // Inserimento riuscito: nessun messaggio. Il silenzio e' la risposta giusta
+    // quando la riga del programma dice gia' «Inserito».
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away",
+      gateway: ({ servizio, cambia }) => {
+        if (servizio === "alarm_arm_away") cambia(TOTALE.entity_id, "armed_away");
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("inserimento riuscito: nessun messaggio", messaggio(scheda) === "", messaggio(scheda));
+  }
+  {
+    // Un rifiuto VECCHIO, gia' nella mappa prima del comando, non va scambiato
+    // per la risposta a questo tentativo: stesso ts, stessa storia di prima.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away",
+      rifiuti: { 1: { esito: "zone_aperte", programma: 1, ts: 500, zone_aperte: ["VECCHIA"] } },
+      gateway: () => {},
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("rifiuto vecchio: non si annuncia", messaggio(scheda) === "", messaggio(scheda));
+  }
+
+  // 18. lo scavalco, dentro il rifiuto e solo li'
+  const rifiutaZone = (ts) => ({ servizio, rifiuta, cambia }) => {
+    if (servizio === "alarm_arm_away") rifiuta(1, "zone_aperte", ts, { zone_aperte: ["FIN.BAGNO P.T."] });
+    if (servizio === "turn_on") cambia("switch.consenti", "on");
+  };
+  {
+    // Rifiutato: si apre il dialogo con il motivo e le due scelte.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away", scavalco: true, gateway: rifiutaZone(900),
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    const testo = scheda._el.velo.textContent;
+    verifica("rifiuto: si apre il dialogo con i nomi delle zone",
+      scheda._el.velo.hidden === false && testo.includes("Totale non inserito")
+      && testo.includes("FIN.BAGNO P.T."), testo.slice(0, 90));
+    verifica("rifiuto: le due scelte, Annulla e Inserisci comunque",
+      scheda._el.dialogo.azioni.figli.map((b) => b.textContent).join("|")
+        === "Annulla|Inserisci comunque",
+      scheda._el.dialogo.azioni.figli.map((b) => b.textContent).join("|"));
+    verifica("rifiuto: il dialogo avverte che le zone restano escluse",
+      /fuori sorveglianza/i.test(testo));
+  }
+  {
+    // Annulla: niente comandi, e l'impianto resta disinserito.
+    const { scheda, chiamate } = prepara({
+      totale: "disarmed", notte: "armed_away", scavalco: true, gateway: rifiutaZone(904),
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    chiamate.length = 0;
+    azioneDialogo(scheda, "Annulla").click();
+    await svuota();
+    await avanza(1000);
+    verifica("rifiuto annullato: dialogo chiuso e nessun comando",
+      scheda._el.velo.hidden === true && chiamate.length === 0, String(chiamate.length));
+  }
+  {
+    // Prima l'interruttore, poi il comando: all'incontrario l'inserimento
+    // arriverebbe al gateway mentre lo scavalco e' ancora spento.
+    const { scheda, chiamate } = prepara({
+      totale: "disarmed", notte: "armed_away", scavalco: true, gateway: rifiutaZone(901),
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    chiamate.length = 0;
+    azioneDialogo(scheda, "Inserisci comunque").click();
+    await svuota();
+    await avanza(4000);
+    const ordine = chiamate.map((c) => `${c.dominio}.${c.servizio}`);
+    verifica("scavalco: prima turn_on, poi l'inserimento",
+      ordine[0] === "switch.turn_on" && ordine[1] === "alarm_control_panel.alarm_arm_away"
+      && ordine.length === 2, ordine.join(" -> "));
+  }
+  {
+    // Lo scavalco non si vede quando il rifiuto e' di un altro tipo: il codice
+    // errato non si aggira accendendo un interruttore.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away", scavalco: true,
+      gateway: ({ servizio, rifiuta }) => {
+        if (servizio === "alarm_arm_away") rifiuta(1, "codice_errato", 902);
+      },
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("rifiuto di altro tipo: nessun dialogo, solo il messaggio",
+      scheda._el.velo.hidden === true && messaggio(scheda) === "Totale: Codice errato",
+      messaggio(scheda));
+  }
+  {
+    // Gateway senza l'interruttore: si dice il rifiuto e basta, senza offrire
+    // una via d'uscita che non esiste.
+    const { scheda } = prepara({
+      totale: "disarmed", notte: "armed_away", gateway: rifiutaZone(903),
+    });
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("gateway senza scavalco: solo il messaggio",
+      scheda._el.velo.hidden === true
+      && messaggio(scheda) === "Totale: non inserito, 1 zona aperta: FIN.BAGNO P.T.",
+      messaggio(scheda));
+  }
+  {
+    // A riposo non c'e': non deve essere un pulsante che si preme per
+    // abitudine, e fuori da un rifiuto non ha senso.
+    const { scheda } = prepara({ totale: "disarmed", notte: "armed_away", scavalco: true });
+    verifica("senza rifiuto: nessun dialogo aperto", scheda._el.velo.hidden === true);
+  }
+
+  // 19. mappa senza centrale
   {
     timer.length = 0;
     const scheda = new Scheda();

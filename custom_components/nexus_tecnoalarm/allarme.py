@@ -22,7 +22,12 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import IDENTIFICATIVO_CENTRALE, NOME_DISPOSITIVO_CENTRALE, TOPIC_RIFIUTO
+from .const import (
+    EVENTO_RIFIUTO,
+    IDENTIFICATIVO_CENTRALE,
+    NOME_DISPOSITIVO_CENTRALE,
+    TOPIC_RIFIUTO,
+)
 from .mappa import (
     Candidato,
     Voce,
@@ -235,3 +240,35 @@ class MappaAllarme:
         # Sostituito, non modificato: vedi con_rifiuto.
         self.rifiuti = con_rifiuto(self.rifiuti, numero, pulito)
         self.notify()
+        self._annuncia_rifiuto(numero, pulito)
+
+    def _annuncia_rifiuto(self, numero: int, pulito: dict[str, Any]) -> None:
+        """Racconta il rifiuto a Home Assistant, per chi ci vuole appendere qualcosa.
+
+        La scheda il rifiuto lo legge dalla mappa; un'automazione no, e mettersi
+        in ascolto dell'argomento MQTT vorrebbe dire conoscere i topic del
+        gateway. L'evento porta anche l'entita' del programma, cosi' chi
+        annuncia sa di quale pannello sta parlando senza riappaiarlo per numero.
+
+        Un evento in piu' non costa niente a chi non lo ascolta, e un rifiuto
+        capita quanto un comando sbagliato: non e' un flusso continuo.
+        """
+        entita = None
+        for programma in self.mappa.get("programmi", []):
+            if programma.get("numero") == numero:
+                entita = programma.get("entity_id")
+                break
+
+        self.hass.bus.async_fire(
+            EVENTO_RIFIUTO,
+            {
+                "programma": numero,
+                "nome": pulito.get("nome"),
+                "azione": pulito.get("azione"),
+                "esito": pulito["esito"],
+                "zone_aperte": pulito.get("zone_aperte", []),
+                "numeri": pulito.get("numeri", []),
+                "entity_id": entita,
+                "ts": pulito.get("ts"),
+            },
+        )

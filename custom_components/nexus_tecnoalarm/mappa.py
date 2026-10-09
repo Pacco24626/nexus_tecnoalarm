@@ -11,6 +11,7 @@ dispositivo e le distingue per prefisso dell'unique_id:
     tec_p_<n>_v30        programma     alarm_control_panel
     tec_t_<n>_v30        telecomando   switch
     tec_gen_alarm_v30    allarme generale della centrale
+    tec_p_<n>_zoneap     zone aperte del programma <n>   binary_sensor
 
 Il numero dopo il prefisso e' quello della programmazione della centrale, ed e'
 l'ordine in cui la scheda li mostra. Va confrontato come numero: in ordine
@@ -27,6 +28,7 @@ from typing import Any
 ID_ALLARME_GENERALE = "tec_gen_alarm_v30"
 ID_AZZERA_MEMORIE = "tec_azzera_memorie"
 ID_MEMORIE = "tec_memorie"
+ID_CONSENTI_ZONE_APERTE = "tec_consenti_zone_aperte"
 
 # Le entita' singole della centrale: un unique_id fisso ciascuna, nessun numero.
 # Vanno nella mappa perche' la card non puo' cercarle da sola — il registro
@@ -36,13 +38,23 @@ _ID_SINGOLE = {
     ID_ALLARME_GENERALE: "allarme_generale",
     ID_AZZERA_MEMORIE: "azzera_memorie",
     ID_MEMORIE: "memorie",
+    ID_CONSENTI_ZONE_APERTE: "consenti_zone_aperte",
 }
 
 _SCHEMA = re.compile(r"^tec_([zpt])_(\d+)_v\d+$")
+
+# La spia «zone aperte» di un programma (gateway V0.8.55). L'unique_id non segue
+# lo schema numerato con la versione, quindi senza una regola sua finirebbe
+# scartata in silenzio come qualunque entita' estranea.
+_SCHEMA_ZONE_APERTE = re.compile(r"^tec_p_(\d+)_zoneap$")
 _SEZIONI = {"z": "zone", "p": "programmi", "t": "telecomandi"}
 _NOMI_PREDEFINITI = {"z": "Zona", "p": "Programma", "t": "Telecomando"}
 
 _SCHEMA_TOPIC_RIFIUTO = re.compile(r"^tecnoalarm/programma/(\d+)/rifiuto$")
+
+# Quante zone, e quanto lunghi i nomi, si tengono di un rifiuto.
+MAX_ZONE_RIFIUTO = 25
+MAX_NOME_ZONA = 48
 
 
 @dataclass(frozen=True)
@@ -89,6 +101,7 @@ def mappa_vuota() -> dict[str, Any]:
         "allarme_generale": None,
         "azzera_memorie": None,
         "memorie": None,
+        "consenti_zone_aperte": None,
     }
 
 
@@ -126,6 +139,10 @@ def classifica(voci: Iterable[Voce], nomi_dispositivo: Iterable[str] = ()) -> di
     dispositivo — si ignorano invece di finire in una sezione a caso.
     """
     nomi = tuple(nomi_dispositivo)
+    # Le spie «zone aperte» si raccolgono a parte: nel registro possono
+    # comparire prima del programma a cui appartengono, e si agganciano alla
+    # fine, quando i programmi ci sono tutti.
+    spie: dict[int, str] = {}
     risultato: dict[str, Any] = {
         "dispositivo_trovato": True,
         "programmi": [],
@@ -134,6 +151,7 @@ def classifica(voci: Iterable[Voce], nomi_dispositivo: Iterable[str] = ()) -> di
         "allarme_generale": None,
         "azzera_memorie": None,
         "memorie": None,
+        "consenti_zone_aperte": None,
     }
 
     for voce in voci:
@@ -142,6 +160,11 @@ def classifica(voci: Iterable[Voce], nomi_dispositivo: Iterable[str] = ()) -> di
         chiave = _ID_SINGOLE.get(voce.unique_id or "")
         if chiave is not None:
             risultato[chiave] = voce.entity_id
+            continue
+
+        spia = _SCHEMA_ZONE_APERTE.match(voce.unique_id or "")
+        if spia is not None:
+            spie[int(spia.group(1))] = voce.entity_id
             continue
 
         corrispondenza = _SCHEMA.match(voce.unique_id or "")
@@ -160,6 +183,12 @@ def classifica(voci: Iterable[Voce], nomi_dispositivo: Iterable[str] = ()) -> di
 
     for sezione in _SEZIONI.values():
         risultato[sezione].sort(key=lambda elemento: elemento["numero"])
+
+    # La spia sta dentro la voce del programma, accanto a numero, entity_id e
+    # nome: cosi' la scheda disegna la riga senza doverle riappaiare per numero.
+    # La chiave c'e' sempre, a None con i gateway che non la pubblicano.
+    for programma in risultato["programmi"]:
+        programma["zone_aperte"] = spie.get(programma["numero"])
 
     return risultato
 
@@ -218,5 +247,35 @@ def pulisci_rifiuto(dati: Any) -> dict[str, Any] | None:
             continue
         if isinstance(valore, (int, float)):
             pulito[chiave] = int(valore)
+
+    # I nomi delle zone che hanno fatto rifiutare l'inserimento: servono a dire
+    # QUALE finestra chiudere, che e' l'unica cosa utile del messaggio. Si
+    # tagliano in lunghezza e in numero perche' arrivano da un broker e
+    # finiscono in un attributo di stato: una centrale grande ne avrebbe
+    # centinaia, e un payload gonfiato peserebbe su ogni aggiornamento.
+    #
+    # Il campo si chiamava 'zone' fino all'08/10/2026, poi il gateway lo ha
+    # rinominato 'zone_aperte' per dare un nome solo allo stesso insieme, che
+    # la spia per programma pubblicava gia' cosi'. Si leggono tutti e due: un
+    # gateway non aggiornato manda ancora il vecchio nome, e non e' una ragione
+    # per lasciare l'utente senza sapere quale finestra ha davanti.
+    grezzo = dati.get("zone_aperte")
+    if not isinstance(grezzo, list):
+        grezzo = dati.get("zone")
+    nomi = [
+        voce.strip()[:MAX_NOME_ZONA]
+        for voce in grezzo
+        if isinstance(voce, str) and voce.strip()
+    ] if isinstance(grezzo, list) else []
+    if nomi:
+        pulito["zone_aperte"] = nomi[:MAX_ZONE_RIFIUTO]
+
+    numeri = [
+        int(voce)
+        for voce in dati.get("numeri", [])
+        if isinstance(voce, (int, float)) and not isinstance(voce, bool)
+    ] if isinstance(dati.get("numeri"), list) else []
+    if numeri:
+        pulito["numeri"] = numeri[:MAX_ZONE_RIFIUTO]
 
     return pulito

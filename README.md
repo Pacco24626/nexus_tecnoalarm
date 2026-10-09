@@ -123,13 +123,11 @@ type: custom:nexus-tecnoalarm-allarme
 entity: sensor.tecnoalarm_mappa_allarme
 ```
 
-Quattro blocchi:
+I blocchi:
 
-- **Programmi** — stato di ciascuno e inserimento a un tocco, senza codice.
-- **Disinserimento** — tastierino con il codice, un pulsante per ciascun programma
-  inserito e un «Disinserisci tutto». I programmi si disinseriscono uno alla volta
-  aspettando l'esito di ciascuno: un codice sbagliato si ferma al primo rifiuto
-  invece di mandare quattro comandi e raccogliere quattro errori.
+- **Programmi** — stato di ciascuno e un pulsante per riga: *Inserisci* se è
+  disinserito (un tocco, senza codice), *Disinserisci* se è inserito. Sotto il nome,
+  quando il gateway la pubblica, la riga delle zone aperte.
 - **Zone** — tutte, con l'icona che corrisponde al `device_class` dichiarato
   dall'installatore e le segnalazioni estese della zona (esclusa, manomissione,
   guasto, batteria). Un filtro mostra solo quelle aperte, che su una centrale grande
@@ -142,6 +140,28 @@ Quattro blocchi:
 Non si elenca niente a mano. La scheda legge le entita' che il gateway Nexus-T
 pubblica sul dispositivo *Centrale Tecnoalarm*: una zona aggiunta in programmazione
 compare da sola, e una tolta sparisce.
+
+### Il disinserimento
+
+Dalla 2.5.0 il tastierino non sta più fisso sotto i programmi: **si preme
+*Disinserisci* sulla riga del programma e si apre una finestra** con lo schermo del
+codice, i tasti e, appena digitato il codice, i pulsanti per confermare — prima
+quello da cui sei entrato, poi «Disinserisci tutto» se c'è più di un programma
+inserito, poi gli altri. *Annulla* chiude in qualunque momento e dimentica il
+codice già digitato.
+
+Un tastierino sempre in vista occupava mezza scheda per un'operazione che si fa due
+volte al giorno, e stava lontano dalla riga del programma che si voleva spegnere.
+
+**La scheda non sa se il codice è giusto**: non esiste un comando che lo verifichi,
+la risposta la dà il gateway quando esegue. Per questo i pulsanti compaiono appena
+c'è un codice, e l'esito si legge dopo: riuscito, la finestra si chiude da sé e sotto
+i programmi resta scritto *Disinserito*; codice sbagliato, la finestra **resta
+aperta** con scritto *Codice errato*, così si ridigita senza ricominciare.
+
+I programmi si disinseriscono uno alla volta aspettando l'esito di ciascuno: un
+codice sbagliato si ferma al primo rifiuto invece di mandare quattro comandi e
+raccogliere quattro errori.
 
 ### Le memorie di allarme
 
@@ -169,6 +189,87 @@ in coda sul gateway e parte quando la connessione torna: dalla scheda non si dis
 e per questo non viene annunciato nessun successo.
 
 Premere più volte non fa danni: le pressioni ravvicinate le assorbe il gateway.
+
+### Le zone aperte, programma per programma
+
+Dalla 2.5.0, se il gateway le pubblica, sotto il nome di ogni programma
+compare in arancione quante zone sono aperte e quali: *2 zone aperte: FINESTRA
+CUCINA, FIN.BAGNO P.T.* — oltre i primi tre nomi si scrive «e un'altra» o «e
+altre N», per non allungare la riga. **Serve il gateway Nexus-T V0.8.55 o successivo**; con uno più
+vecchio la riga non compare e non cambia nulla.
+
+**Quando non c'è scritto niente, non vuol dire «tutto chiuso».** La spia conta solo
+le zone istantanee del programma: una ritardata aperta, una interna o una già isolata
+la lasciano spenta. È per questo che la riga sparisce invece di dire «tutto a
+posto»: una rassicurazione del genere la smentirebbe la prima finestra lasciata
+accostata.
+
+**Se la spia non risponde si legge «zone aperte: non noto»**, in grigio. Il gateway
+la ripubblica di continuo e la fa scadere dopo un minuto di silenzio: capita durante
+un riavvio o quando la centrale è irraggiungibile. Il silenzio non viene mai
+presentato come via libera.
+
+**Il pulsante «Inserisci» resta premibile in tutti e tre i casi.** Le zone aperte le
+esclude la centrale da sé al momento dell'inserimento, e l'elenco che si legge qui
+non è quello delle escluse: l'esclusione automatica guarda l'impianto intero e si
+ferma a venticinque. La riga serve a decidere, non a impedire.
+
+### Se il gateway rifiuta l'inserimento
+
+Sul gateway si puo' scegliere il **modo d'inserimento 4, «rifiuta se ci sono zone
+aperte»**. Con l'impostazione normale l'impianto si inserisce escludendo da sé le
+zone aperte e qui non arriva niente; con il modo 4 il gateway rifiuta, e **il rifiuto
+vale per i comandi che arrivano da Home Assistant**, l'unico canale che ha modo di
+spiegare perché. Da Vimar e da KNX decide un'impostazione a parte sulla Dashboard
+del gateway.
+
+Dalla 2.5.0 la scheda lo dice: *«Totale: non inserito, 2 zone aperte: FINESTRA
+CUCINA, PORTAFINESTRA SALOTTO»*. Prima il pulsante tornava al suo posto e
+l'impianto restava disinserito senza che nulla spiegasse il perché.
+
+**Se la zona non si può chiudere** c'è l'interruttore *Consenti inserimento con zone
+aperte*: acceso, il prossimo inserimento passa escludendo le aperte, e poi si spegne
+da sé — vale cinque minuti o un inserimento, quello che viene prima. Lo spegne il
+gateway, non l'integrazione: due schede aperte se lo toglierebbero di mano a vicenda.
+Serve a non restare chiusi fuori quando un contatto si guasta aperto.
+
+Nella scheda **non è una riga fissa**: il rifiuto apre una finestra che dice quali
+zone sono aperte, avverte che inserendo comunque restano fuori sorveglianza, e
+chiede — *Annulla* o *Inserisci comunque*. Premerlo arma la casa con una zona
+esclusa, e un pulsante sempre a portata di dito si finisce per premerlo senza
+leggere. Chi lo vuole sempre in vista può metterlo in plancia da sé: l'entità è un
+normale `switch` del dispositivo della centrale.
+
+**Per le automazioni** l'integrazione lancia l'evento `nexus_tecnoalarm_comando_rifiutato`
+ogni volta che il gateway non esegue un comando — zone aperte, codice errato,
+qualunque motivo. Serve a non dover ascoltare gli argomenti MQTT del gateway:
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: nexus_tecnoalarm_comando_rifiutato
+    event_data:
+      esito: zone_aperte
+actions:
+  - action: tts.speak
+    target:
+      entity_id: tts.home_assistant_cloud
+    data:
+      media_player_entity_id: media_player.piano_terra
+      message: >-
+        {{ trigger.event.data.nome }} non inserito:
+        {{ trigger.event.data.zone_aperte | join(', ') }} {{ 'aperta' if trigger.event.data.zone_aperte | count == 1 else 'aperte' }}
+```
+
+I campi dell'evento: `programma` (numero), `nome`, `azione` (`ARM` o `DISARM`),
+`esito`, `zone_aperte` (i nomi, al massimo 25), `numeri`, `entity_id` del pannello e
+`ts` del gateway.
+
+Dal gateway V0.8.55 l'ultimo rifiuto sta anche **negli attributi del pannello** del
+programma (`esito`, `zone_aperte`, `ts`), leggibili con `state_attr` senza passare
+né da questa integrazione né da MQTT. Serve a chi inserisce da un'automazione: la
+chiamata al servizio riesce comunque, e senza guardare il rifiuto un «inserisci alle
+23» risulterebbe eseguito con la casa rimasta disinserita.
 
 ### Il registro eventi
 

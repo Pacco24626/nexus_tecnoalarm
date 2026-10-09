@@ -21,6 +21,8 @@
     --card-background-color: #fff; --divider-color: #e0e0e0;
     --success-color: #2f9e52; --warning-color: #d99012; --error-color: #cf3b30;
     --state-icon-color: #44739e;
+    /* Senza queste i pulsanti escono bianchi su bianco e la fotografia mente. */
+    --primary-color: #03a9f4; --text-primary-color: #fff;
   }
   ha-card { display: block; background: var(--card-background-color); border-radius: 12px;
             box-shadow: 0 2px 6px rgba(0,0,0,.12); }
@@ -65,10 +67,15 @@
   ];
   const telecomandi = [{ numero: 1, entity_id: "switch.telecomando_1", nome: "Telecomando 1" }];
 
+  // La spia «zone aperte» di ogni programma (gateway V0.8.55): nella mappa sta
+  // dentro la voce del programma. Con il gateway vecchio la chiave vale None.
+  for (const p of programmi) p.zone_aperte = VECCHIO ? null : `binary_sensor.zoneap_${p.numero}`;
+
   const stati = {
     [MAPPA]: { entity_id: MAPPA, state: "4", last_updated: "1", attributes: {
       ruolo: "mappa_allarme", dispositivo_trovato: true, programmi, zone, telecomandi,
       allarme_generale: "binary_sensor.allarme", rifiuti: {},
+      ...(VECCHIO ? {} : { consenti_zone_aperte: "switch.consenti_zone_aperte" }),
       ...(VECCHIO
         ? { azzera_memorie: null, memorie: null }
         : { azzera_memorie: "button.azzera_memorie", memorie: "binary_sensor.memorie" }),
@@ -89,6 +96,26 @@
   }
   for (const t of telecomandi) {
     stati[t.entity_id] = { entity_id: t.entity_id, state: "off", last_updated: "1", attributes: {} };
+  }
+
+  // Le tre facce della spia, una per riga: accesa con i nomi, spenta (e la
+  // riga resta pulita), scaduta per silenzio del gateway.
+  const SPIE = VECCHIO ? {} : {
+    1: { stato: "on", zone: ["FINESTRA CUCINA", "FIN.BAGNO P.T."] },
+    2: { stato: "off", zone: [] },
+    3: { stato: "unavailable", zone: [] },
+    4: { stato: "on", zone: ["PORTA GARAGE", "FIN.CAMERA", "FIN.STUDIO", "LUCERNARIO"] },
+  };
+  for (const [numero, spia] of Object.entries(SPIE)) {
+    const id = `binary_sensor.zoneap_${numero}`;
+    stati[id] = { entity_id: id, state: spia.stato, last_updated: "1", attributes: {
+      ruolo: "zone_aperte_programma", programma: Number(numero), device_class: "problem",
+      zone_aperte: spia.zone, totale: spia.zone.length } };
+  }
+
+  if (!VECCHIO) {
+    stati["switch.consenti_zone_aperte"] = { entity_id: "switch.consenti_zone_aperte",
+      state: "off", last_updated: "1", attributes: {} };
   }
 
   if (VECCHIO) delete stati[REGISTRO];
