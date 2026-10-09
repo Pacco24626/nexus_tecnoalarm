@@ -164,6 +164,9 @@ let spieNellaMappa = {};
 // L'interruttore di scavalco, anche lui dalla V0.8.55.
 let scavalcoNellaMappa = false;
 
+// Impianto senza aree assegnate: il caso di ogni installazione nuova.
+let zoneSenzaArea = false;
+
 function statoMappa(rifiuti = {}) {
   return stato(MAPPA, "5", {
     ruolo: "mappa_allarme",
@@ -178,7 +181,7 @@ function statoMappa(rifiuti = {}) {
     zone: [
       // La 1 ha casa, la 2 no: cosi' si prova anche il gruppo di coda.
       { numero: 1, entity_id: "binary_sensor.porta", nome: "Porta",
-        area: "Salotto", piano: "Piano Terra" },
+        area: zoneSenzaArea ? null : "Salotto", piano: zoneSenzaArea ? null : "Piano Terra" },
       { numero: 2, entity_id: "binary_sensor.finestra", nome: "Finestra",
         area: null, piano: null },
     ],
@@ -190,11 +193,12 @@ function statoMappa(rifiuti = {}) {
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
   spieNellaMappa = spie || {};
   scavalcoNellaMappa = Boolean(scavalco);
+  zoneSenzaArea = Boolean(senzaArea);
   const chiamate = [];
   const scheda = new Scheda();
   const casa = {
@@ -586,6 +590,19 @@ async function prove() {
       scheda._raggruppa === "piano"
       && titoliGruppi(scheda).join("|") === "Piano Terra|Senza piano",
       titoliGruppi(scheda).join("|"));
+  }
+  {
+    // Impianto appena installato: nessuna zona assegnata a un'area. Un titolo
+    // «Senza piano» sopra l'elenco intero non dividerebbe niente e sembrerebbe
+    // un difetto - ed e' quello che vedono tutti al primo avvio.
+    const { scheda } = prepara({ porta: "on", zoneSenzaArea: true });
+    bottoni(scheda).find((b) => b.textContent === "Tutte").click();
+    verifica("nessuna area assegnata: nessuna intestazione",
+      titoliGruppi(scheda).join("|") === "(senza titolo)",
+      titoliGruppi(scheda).join("|"));
+    verifica("nessuna area assegnata: le zone ci sono tutte",
+      [...scheda._el.zone.values()].filter((v) => !v.tessera.hidden).length === 2,
+      String([...scheda._el.zone.values()].filter((v) => !v.tessera.hidden).length));
   }
   {
     const { scheda } = prepara({ porta: "on", config: { raggruppa: "area" } });

@@ -167,6 +167,10 @@ programmazione di solito segue il giro della casa, mentre in ordine alfabetico
 un gruppo a parte: sugli impianti veri sono ingressi tecnici — un guasto riportato,
 un'uscita — non stanze dimenticate.
 
+**Finché nessuna zona ha un'area — cioè appena installato — non compare nessuna
+intestazione**: un titolo solo sopra l'elenco intero non dividerebbe niente. I gruppi
+nascono quando assegni le zone, e spariscono se le togli.
+
 Nella vista *Da verificare* le intestazioni spariscono: lì ci sono due o tre tessere,
 e un titolo sopra ciascuna è più rumore che ordine.
 

@@ -634,7 +634,13 @@ function raggruppaZone(zone, modo) {
   const fuori = gruppi.get(null);
   gruppi.delete(null);
   const elenco = [...gruppi.entries()].map(([titolo, elenco]) => ({ titolo, zone: elenco }));
-  if (fuori) elenco.push({ titolo: modo === "area" ? "Senza area" : "Senza piano", zone: fuori });
+  if (!fuori) return elenco;
+  // Nessuno ha un'area: e' il caso di ogni impianto appena installato, finche'
+  // l'installatore non assegna le zone alle stanze. Un'intestazione «Senza
+  // piano» sopra l'elenco intero sarebbe un titolo che non divide niente, e
+  // sembrerebbe un difetto. Meglio nessun raggruppamento.
+  if (elenco.length === 0) return [{ titolo: null, zone: fuori }];
+  elenco.push({ titolo: modo === "area" ? "Senza area" : "Senza piano", zone: fuori });
   return elenco;
 }
 
