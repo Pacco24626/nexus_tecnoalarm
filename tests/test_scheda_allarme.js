@@ -892,6 +892,18 @@ async function prove() {
       rigaProgramma(scheda, TOTALE).testo === "3 zone aperte",
       rigaProgramma(scheda, TOTALE).testo);
   }
+  {
+    // Accesa con il conto a zero: lo stato ha scavalcato gli attributi. Mai
+    // «0 zone aperte», che si contraddice, e mai la riga pulita, che direbbe
+    // «tutto chiuso» mentre la spia dice il contrario.
+    const { scheda } = prepara({
+      totale: "disarmed",
+      spie: { 1: { stato: "on", zone: [], totale: 0 } },
+    });
+    const riga = rigaProgramma(scheda, TOTALE);
+    verifica("accesa a conto zero: si dice che non si sa, non «0 zone aperte»",
+      riga.testo === "zone aperte: non noto" && riga.tono === "ignoto", riga.testo);
+  }
 
   // 17. inserimento rifiutato dal gateway (modo 4 «rifiuta se ci sono zone aperte»)
   {

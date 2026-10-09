@@ -244,6 +244,11 @@ la ripubblica di continuo e la fa scadere dopo un minuto di silenzio: capita dur
 un riavvio o quando la centrale è irraggiungibile. Il silenzio non viene mai
 presentato come via libera.
 
+Si legge *non noto* anche quando la spia è accesa ma l'elenco è ancora vuoto: stato
+e attributi sono due messaggi distinti, e in una transizione rapida il primo può
+arrivare senza il secondo. *0 zone aperte* contraddirebbe se stessa, e una riga
+pulita direbbe «tutto chiuso» mentre la spia dice il contrario.
+
 **Il pulsante «Inserisci» resta premibile in tutti e tre i casi.** Le zone aperte le
 esclude la centrale da sé al momento dell'inserimento, e l'elenco che si legge qui
 non è quello delle escluse: l'esclusione automatica guarda l'impianto intero e si

@@ -1197,6 +1197,20 @@ class NexusTecnoalarmAllarme extends HTMLElement {
 
     const nomi = Array.isArray(spia.attributes.zone_aperte) ? spia.attributes.zone_aperte : [];
     const quante = Number(spia.attributes.totale) || nomi.length;
+
+    // Spia accesa e conto a zero: lo stato e' arrivato prima degli attributi,
+    // e capita davvero - visto sull'impianto di casa il 09/10, in transizioni
+    // da un secondo. «0 zone aperte» e' una frase che contraddice se stessa;
+    // non scrivere niente direbbe «tutto chiuso», che e' falso, perche' la
+    // spia accesa vuol dire che qualcosa c'e'. Si dice che non si sa ancora,
+    // e al messaggio buono la riga si riscrive da se'.
+    if (quante === 0) {
+      riquadro.hidden = false;
+      riquadro.dataset.tono = "ignoto";
+      riquadro.textContent = "zone aperte: non noto";
+      return;
+    }
+
     riquadro.hidden = false;
     riquadro.dataset.tono = "aperte";
     riquadro.textContent = testoZoneAperte(quante, nomi);
