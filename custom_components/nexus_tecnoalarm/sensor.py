@@ -17,6 +17,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .allarme import MappaAllarme
 from .const import (
+    CONF_DISPOSITIVI_PREALLARME,
+    CONF_TASTIERINO_PREALLARME,
+    DEFAULT_TASTIERINO_PREALLARME,
     DOMAIN,
     KEY_MAPPA,
     LEGACY_SENSOR_NAME,
@@ -25,6 +28,7 @@ from .const import (
     MODEL,
     RUOLO_MAPPA,
 )
+from .dispositivi import identificativi
 from .entity import KeypadEntity
 from .gateway import KeypadGateway
 
@@ -85,6 +89,10 @@ class MappaAllarmeSensor(SensorEntity):
 
     def __init__(self, gateway: KeypadGateway) -> None:
         self._mappa: MappaAllarme | None = None
+        # La voce di configurazione serve per le opzioni del tastierino
+        # automatico: cambiarle ricarica l'integrazione, quindi il sensore
+        # rinasce e le rilegge da se'.
+        self._entry = gateway.entry
         self._attr_unique_id = f"{gateway.entry.entry_id}_{KEY_MAPPA}"
         # Stesso dispositivo delle entita' della tastiera. Non si eredita da
         # KeypadEntity perche' quella si ridisegna a ogni polling della
@@ -112,7 +120,31 @@ class MappaAllarmeSensor(SensorEntity):
         return len(mappa["programmi"]) + len(mappa["zone"]) + len(mappa["telecomandi"])
 
     @property
+    def _tastierino(self) -> dict[str, Any]:
+        """Le due chiavi del tastierino automatico, per il guardiano della card.
+
+        Gli identificativi e non i nomi: alla scheda servono per sapere se
+        questo dispositivo e' fra gli abilitati, e pubblicare in un attributo
+        di stato come il cliente ha chiamato le stanze di casa sua non serve a
+        nessuno.
+        """
+        opzioni = {**self._entry.data, **self._entry.options}
+        return {
+            CONF_TASTIERINO_PREALLARME: bool(
+                opzioni.get(CONF_TASTIERINO_PREALLARME, DEFAULT_TASTIERINO_PREALLARME)
+            ),
+            CONF_DISPOSITIVI_PREALLARME: identificativi(
+                opzioni.get(CONF_DISPOSITIVI_PREALLARME)
+            ),
+        }
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         if self._mappa is None:
-            return {"ruolo": RUOLO_MAPPA}
-        return {"ruolo": RUOLO_MAPPA, **self._mappa.mappa, "rifiuti": self._mappa.rifiuti}
+            return {"ruolo": RUOLO_MAPPA, **self._tastierino}
+        return {
+            "ruolo": RUOLO_MAPPA,
+            **self._mappa.mappa,
+            "rifiuti": self._mappa.rifiuti,
+            **self._tastierino,
+        }

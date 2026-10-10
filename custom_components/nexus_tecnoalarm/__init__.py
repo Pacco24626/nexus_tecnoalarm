@@ -24,15 +24,21 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.loader import async_get_integration
 
 from .const import (
+    ATTR_DISPOSITIVO_ID,
+    ATTR_DISPOSITIVO_NOME,
     ATTR_ENTRY_ID,
     ATTR_KEY_CODE,
     CARD_FILES,
     CARD_URL_BASE,
+    CONF_DISPOSITIVI_PREALLARME,
     DOMAIN,
     PLATFORMS,
+    SERVICE_DIMENTICA_DISPOSITIVO,
     SERVICE_KEYPAD_PRESENCE,
+    SERVICE_REGISTRA_DISPOSITIVO,
     SERVICE_SEND_KEY,
 )
+from .dispositivi import con_dispositivo, senza_dispositivo
 from .gateway import KeypadGateway
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +56,20 @@ SEND_KEY_SCHEMA = vol.Schema(
 )
 
 PRESENCE_SCHEMA = vol.Schema({vol.Optional(ATTR_ENTRY_ID): cv.string})
+
+REGISTRA_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_DISPOSITIVO_ID): cv.string,
+        vol.Optional(ATTR_DISPOSITIVO_NOME): cv.string,
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+    }
+)
+DIMENTICA_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_DISPOSITIVO_ID): cv.string,
+        vol.Optional(ATTR_ENTRY_ID): cv.string,
+    }
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -77,6 +97,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not _gateways(hass):
             hass.services.async_remove(DOMAIN, SERVICE_SEND_KEY)
             hass.services.async_remove(DOMAIN, SERVICE_KEYPAD_PRESENCE)
+            hass.services.async_remove(DOMAIN, SERVICE_REGISTRA_DISPOSITIVO)
+            hass.services.async_remove(DOMAIN, SERVICE_DIMENTICA_DISPOSITIVO)
     return unload_ok
 
 
@@ -225,7 +247,44 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if entry_id in (None, identificativo):
                 gateway.note_presence()
 
+    def _scrivi_dispositivi(call: ServiceCall, elenco_nuovo) -> None:
+        """Salva l'elenco nelle opzioni della voce di configurazione.
+
+        Scrivere le opzioni fa ricaricare l'integrazione: le entita' spariscono
+        per un paio di secondi. E' accettabile perche' succede quando qualcuno
+        accende o spegne l'interruttore su un tablet, non durante l'uso.
+        """
+        entry = _seleziona(call).entry
+        opzioni = {**entry.options}
+        if opzioni.get(CONF_DISPOSITIVI_PREALLARME) == elenco_nuovo:
+            return
+        opzioni[CONF_DISPOSITIVI_PREALLARME] = elenco_nuovo
+        hass.config_entries.async_update_entry(entry, options=opzioni)
+
+    async def handle_registra(call: ServiceCall) -> None:
+        entry = _seleziona(call).entry
+        attuale = {**entry.data, **entry.options}.get(CONF_DISPOSITIVI_PREALLARME)
+        nuovo = con_dispositivo(
+            attuale, call.data[ATTR_DISPOSITIVO_ID], call.data.get(ATTR_DISPOSITIVO_NOME)
+        )
+        if not any(v["id"] == call.data[ATTR_DISPOSITIVO_ID].strip().lower() for v in nuovo):
+            raise ServiceValidationError(
+                "Identificativo non valido, oppure l'elenco dei dispositivi e' pieno"
+            )
+        _scrivi_dispositivi(call, nuovo)
+
+    async def handle_dimentica(call: ServiceCall) -> None:
+        entry = _seleziona(call).entry
+        attuale = {**entry.data, **entry.options}.get(CONF_DISPOSITIVI_PREALLARME)
+        _scrivi_dispositivi(call, senza_dispositivo(attuale, call.data[ATTR_DISPOSITIVO_ID]))
+
     hass.services.async_register(DOMAIN, SERVICE_SEND_KEY, handle_send_key, SEND_KEY_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_REGISTRA_DISPOSITIVO, handle_registra, REGISTRA_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DIMENTICA_DISPOSITIVO, handle_dimentica, DIMENTICA_SCHEMA
+    )
     hass.services.async_register(
         DOMAIN, SERVICE_KEYPAD_PRESENCE, handle_presence, PRESENCE_SCHEMA
     )

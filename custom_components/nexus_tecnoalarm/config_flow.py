@@ -15,12 +15,14 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_DISPOSITIVI_PREALLARME,
     CONF_HOST,
     CONF_MAX_BACKOFF,
     CONF_ON_DEMAND,
     CONF_PING_INTERVAL,
     CONF_PORT,
     CONF_PRESENCE_WINDOW,
+    CONF_TASTIERINO_PREALLARME,
     CONF_TOKEN,
     CONF_USE_TLS,
     CONF_VERIFY_SSL,
@@ -30,12 +32,14 @@ from .const import (
     DEFAULT_PING_INTERVAL,
     DEFAULT_PORT,
     DEFAULT_PRESENCE_WINDOW,
+    DEFAULT_TASTIERINO_PREALLARME,
     DEFAULT_USE_TLS,
     DEFAULT_VERIFY_SSL,
     DOMAIN,
     GATEWAY_PRESENCE_WINDOW,
     MAX_PING_INTERVAL,
 )
+from .dispositivi import elenco_valido
 from .gateway import CannotConnect, InvalidAuth, async_validate_connection
 
 
@@ -115,6 +119,37 @@ def _schema_opzioni(defaults: dict[str, Any]) -> vol.Schema:
     )
 
 
+def _schema_tastierino(defaults: dict[str, Any]) -> vol.Schema:
+    """L'interruttore dell'impianto e l'elenco dei dispositivi abilitati.
+
+    I dispositivi non si aggiungono da qui: l'identificativo lo genera il
+    browser, e un tablet lo si abilita camminandoci davanti. Da qui si vede chi
+    e' abilitato e si revoca, che e' la cosa che da qui si puo' fare davvero.
+    """
+    campi: dict[Any, Any] = {
+        vol.Required(
+            CONF_TASTIERINO_PREALLARME,
+            default=defaults.get(CONF_TASTIERINO_PREALLARME, DEFAULT_TASTIERINO_PREALLARME),
+        ): selector.BooleanSelector(),
+    }
+
+    elenco = elenco_valido(defaults.get(CONF_DISPOSITIVI_PREALLARME))
+    if elenco:
+        campi[
+            vol.Optional("dispositivi_attivi", default=[voce["id"] for voce in elenco])
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+                options=[
+                    selector.SelectOptionDict(value=voce["id"], label=voce["nome"])
+                    for voce in elenco
+                ],
+            )
+        )
+    return vol.Schema(campi)
+
+
 def _normalizza(user_input: dict[str, Any]) -> dict[str, Any]:
     """Porta i numeri a int: i selector li restituiscono come float."""
     dati = dict(user_input)
@@ -176,7 +211,9 @@ class NexusTecnoalarmOptionsFlow(OptionsFlow):
         return {**self.config_entry.data, **self.config_entry.options}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["gateway", "comportamento"])
+        return self.async_show_menu(
+            step_id="init", menu_options=["gateway", "comportamento", "tastierino"]
+        )
 
     async def async_step_gateway(
         self, user_input: dict[str, Any] | None = None
@@ -206,6 +243,26 @@ class NexusTecnoalarmOptionsFlow(OptionsFlow):
             step_id="comportamento",
             data_schema=_schema_opzioni(self._current),
             description_placeholders={"finestra_gateway": str(GATEWAY_PRESENCE_WINDOW)},
+        )
+
+    async def async_step_tastierino(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            dati = dict(user_input)
+            # Chi resta spuntato resta abilitato: togliendo la spunta si revoca.
+            # L'elenco si puo' solo accorciare da qui, mai allungare.
+            rimasti = dati.pop("dispositivi_attivi", None)
+            if rimasti is not None:
+                attuali = elenco_valido(self._current.get(CONF_DISPOSITIVI_PREALLARME))
+                dati[CONF_DISPOSITIVI_PREALLARME] = [
+                    voce for voce in attuali if voce["id"] in rimasti
+                ]
+            return self._salva(dati)
+
+        return self.async_show_form(
+            step_id="tastierino",
+            data_schema=_schema_tastierino(self._current),
         )
 
     def _salva(self, changes: dict[str, Any]) -> ConfigFlowResult:

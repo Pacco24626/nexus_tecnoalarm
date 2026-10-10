@@ -33,7 +33,8 @@
         "title": "Keypad configuration",
         "menu_options": {
           "gateway": "Connection",
-          "comportamento": "Behaviour"
+          "comportamento": "Behaviour",
+          "tastierino": "Automatic keypad"
         }
       },
       "gateway": {
@@ -60,6 +61,18 @@
           "on_demand": "When off, the keypad stays attached to the gateway at all times.",
           "presence_window": "How long after the card's last heartbeat the keypad stays attached.",
           "max_backoff": "Attempts start at 5 seconds and double up to this value."
+        }
+      },
+      "tastierino": {
+        "title": "Automatic keypad",
+        "description": "When someone comes in and the program enters pre-alarm, the disarm keypad can appear on its own. Only on devices that asked for it: the switch is in the alarm card and has to be turned on while standing at that tablet. Here you can see which devices are enabled, and revoke them.",
+        "data": {
+          "tastierino_preallarme": "Automatic keypad on pre-alarm",
+          "dispositivi_attivi": "Enabled devices"
+        },
+        "data_description": {
+          "tastierino_preallarme": "When off, the row that enables a device does not even appear in the card. A keypad that shows up by itself is also seen by whoever walked in without the right to: it does not hand them the code, but it is convenience paid for in security.",
+          "dispositivi_attivi": "Clear a tick to revoke a device: it takes effect at once, even if nobody touches that tablet for months. From here you can only revoke, because a device is enabled by standing in front of it."
         }
       }
     },
@@ -90,6 +103,38 @@
         "entry_id": {
           "name": "Gateway",
           "description": "If omitted, applies to every configured gateway."
+        }
+      }
+    },
+    "registra_dispositivo": {
+      "name": "Enable this device",
+      "description": "Enables a device for the automatic keypad on pre-alarm. The alarm card calls it when you turn the switch on from that device: there is no need to call it by hand.",
+      "fields": {
+        "dispositivo_id": {
+          "name": "Identifier",
+          "description": "The identifier the browser generated for itself."
+        },
+        "nome": {
+          "name": "Name",
+          "description": "How to call it in the options list."
+        },
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Needed only with more than one gateway configured."
+        }
+      }
+    },
+    "dimentica_dispositivo": {
+      "name": "Revoke this device",
+      "description": "Removes a device from the list enabled for the automatic keypad. The alarm card calls it when you turn the switch off.",
+      "fields": {
+        "dispositivo_id": {
+          "name": "Identifier",
+          "description": "The identifier of the device to revoke."
+        },
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Needed only with more than one gateway configured."
         }
       }
     }

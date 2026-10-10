@@ -35,3 +35,51 @@ keypad_presence:
       required: false
       selector:
         text:
+
+registra_dispositivo:
+  name: Abilita questo dispositivo
+  description: >-
+    Abilita un dispositivo al tastierino automatico in preallarme. La chiama la
+    scheda allarme quando accendi l'interruttore su quel dispositivo: non serve
+    invocarla a mano.
+  fields:
+    dispositivo_id:
+      name: Identificativo
+      description: "L'identificativo che il browser si e' generato."
+      required: true
+      example: "a1b2c3d4e5f6"
+      selector:
+        text:
+    nome:
+      name: Nome
+      description: "Come chiamarlo nell'elenco delle opzioni."
+      required: false
+      example: "Tablet ingresso"
+      selector:
+        text:
+    entry_id:
+      name: Gateway
+      description: "Necessario solo con piu' di un gateway configurato."
+      required: false
+      selector:
+        text:
+
+dimentica_dispositivo:
+  name: Revoca questo dispositivo
+  description: >-
+    Toglie un dispositivo dall'elenco di quelli abilitati al tastierino
+    automatico. La chiama la scheda allarme quando spegni l'interruttore.
+  fields:
+    dispositivo_id:
+      name: Identificativo
+      description: "L'identificativo del dispositivo da revocare."
+      required: true
+      example: "a1b2c3d4e5f6"
+      selector:
+        text:
+    entry_id:
+      name: Gateway
+      description: "Necessario solo con piu' di un gateway configurato."
+      required: false
+      selector:
+        text:

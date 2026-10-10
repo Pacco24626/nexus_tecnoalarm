@@ -13,6 +13,21 @@ PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 # --- Servizi ------------------------------------------------------------------
 SERVICE_SEND_KEY = "send_key"
 SERVICE_KEYPAD_PRESENCE = "keypad_presence"
+SERVICE_REGISTRA_DISPOSITIVO = "registra_dispositivo"
+SERVICE_DIMENTICA_DISPOSITIVO = "dimentica_dispositivo"
+
+# Il tastierino che si apre da solo quando qualcuno entra. Spento di fabbrica:
+# una finestra che compare da sola su un impianto d'allarme la si accende
+# sapendo cosa si fa, non la si subisce dopo un aggiornamento.
+CONF_TASTIERINO_PREALLARME = "tastierino_preallarme"
+DEFAULT_TASTIERINO_PREALLARME = False
+# L'elenco dei dispositivi abilitati: [{"id": ..., "nome": ...}]. L'identita' la
+# genera il browser, l'autorizzazione sta qui, cosi' una revoca ha effetto
+# subito anche su un tablet che nessuno tocchera' per mesi.
+CONF_DISPOSITIVI_PREALLARME = "dispositivi_preallarme"
+
+ATTR_DISPOSITIVO_ID = "dispositivo_id"
+ATTR_DISPOSITIVO_NOME = "nome"
 ATTR_KEY_CODE = "code"
 ATTR_ENTRY_ID = "entry_id"
 

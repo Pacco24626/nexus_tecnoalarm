@@ -33,7 +33,8 @@
         "title": "Configurazione tastiera",
         "menu_options": {
           "gateway": "Connessione",
-          "comportamento": "Comportamento"
+          "comportamento": "Comportamento",
+          "tastierino": "Tastierino automatico"
         }
       },
       "gateway": {
@@ -60,6 +61,18 @@
           "on_demand": "Spento, la tastiera resta sempre agganciata al gateway.",
           "presence_window": "Per quanto tempo dopo l'ultimo battito della card la tastiera resta agganciata.",
           "max_backoff": "I tentativi partono da 5 secondi e raddoppiano fino a questo valore."
+        }
+      },
+      "tastierino": {
+        "title": "Tastierino automatico",
+        "description": "Quando qualcuno entra e il programma va in preallarme, il tastierino per disinserire puo' comparire da solo. Vale soltanto sui dispositivi che lo hanno chiesto: l'interruttore sta nella scheda allarme, e va acceso andando davanti a quel tablet. Da qui si vede chi e' abilitato e si revoca.",
+        "data": {
+          "tastierino_preallarme": "Tastierino automatico in preallarme",
+          "dispositivi_attivi": "Dispositivi abilitati"
+        },
+        "data_description": {
+          "tastierino_preallarme": "Spento, la riga per abilitare un dispositivo non compare nemmeno nella scheda. Un tastierino che si presenta da solo lo vede anche chi e' entrato senza averne diritto: non gli regala il codice, ma e' comodita' pagata in sicurezza.",
+          "dispositivi_attivi": "Togli la spunta per revocare un dispositivo: ha effetto subito, anche se quel tablet non lo tocchera' nessuno per mesi. Da qui si puo' solo revocare, perche' un dispositivo si abilita andandoci davanti."
         }
       }
     },
@@ -90,6 +103,38 @@
         "entry_id": {
           "name": "Gateway",
           "description": "Se omesso, vale per tutti i gateway configurati."
+        }
+      }
+    },
+    "registra_dispositivo": {
+      "name": "Abilita questo dispositivo",
+      "description": "Abilita un dispositivo al tastierino automatico in preallarme. La chiama la scheda allarme quando accendi l'interruttore su quel dispositivo: non serve invocarla a mano.",
+      "fields": {
+        "dispositivo_id": {
+          "name": "Identificativo",
+          "description": "L'identificativo che il browser si e' generato."
+        },
+        "nome": {
+          "name": "Nome",
+          "description": "Come chiamarlo nell'elenco delle opzioni."
+        },
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Necessario solo con piu' di un gateway configurato."
+        }
+      }
+    },
+    "dimentica_dispositivo": {
+      "name": "Revoca questo dispositivo",
+      "description": "Toglie un dispositivo dall'elenco di quelli abilitati al tastierino automatico. La chiama la scheda allarme quando spegni l'interruttore.",
+      "fields": {
+        "dispositivo_id": {
+          "name": "Identificativo",
+          "description": "L'identificativo del dispositivo da revocare."
+        },
+        "entry_id": {
+          "name": "Gateway",
+          "description": "Necessario solo con piu' di un gateway configurato."
         }
       }
     }
