@@ -1280,8 +1280,9 @@ async function prove() {
     verifica("accensione: prima si chiede, e nessun comando parte",
       scheda._el.velo.hidden === false && chiamate.length === 0, String(chiamate.length));
     const testo = scheda._el.velo.textContent;
-    verifica("la domanda avverte che e' comodita' pagata in sicurezza",
-      /senza averne diritto/.test(testo));
+    verifica("la domanda dice che vale solo qui, e non si dilunga",
+      /Vale solo per questo dispositivo\./.test(testo)
+      && !/senza averne diritto/.test(testo), testo.slice(0, 120));
     const campo = scheda._el.dialogo.corpo.tutti().find((n) => n.className === "campo-nome");
     campo.value = "  Tablet ingresso  ";
     azioneDialogo(scheda, "Attiva").click();

@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.6.0";
+const VERSIONE_SCHEDA = "2.6.1";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1278,7 +1278,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       titolo: "Attivare il tastierino su questo dispositivo?",
       corpo: [
         el("p", { testo: "Quando qualcuno entra e l'impianto va in preallarme, qui si aprira' da solo il tastierino per disinserire, sopra qualunque pagina." }),
-        el("p", { testo: "Vale solo per questo dispositivo. Un tastierino che si presenta da solo lo vede anche chi e' entrato senza averne diritto: non gli regala il codice, ma e' comodita' pagata in sicurezza." }),
+        el("p", { testo: "Vale solo per questo dispositivo." }),
         campo,
       ],
       azioni: [
