@@ -37,49 +37,48 @@ keypad_presence:
         text:
 
 registra_dispositivo:
-  name: Abilita questo dispositivo
+  name: Abilita dispositivo
   description: >-
-    Abilita un dispositivo al tastierino automatico in preallarme. La chiama la
-    scheda allarme quando accendi l'interruttore su quel dispositivo: non serve
-    invocarla a mano.
+    Abilita un dispositivo al tastierino automatico in preallarme. Chiamata
+    dalla scheda allarme: non e' prevista l'invocazione manuale.
   fields:
     dispositivo_id:
       name: Identificativo
-      description: "L'identificativo che il browser si e' generato."
+      description: "Identificativo generato dal dispositivo."
       required: true
       example: "a1b2c3d4e5f6"
       selector:
         text:
     nome:
       name: Nome
-      description: "Come chiamarlo nell'elenco delle opzioni."
+      description: "Nome mostrato nell'elenco dei dispositivi abilitati."
       required: false
       example: "Tablet ingresso"
       selector:
         text:
     entry_id:
       name: Gateway
-      description: "Necessario solo con piu' di un gateway configurato."
+      description: "Richiesto solo con piu' gateway configurati."
       required: false
       selector:
         text:
 
 dimentica_dispositivo:
-  name: Revoca questo dispositivo
+  name: Revoca dispositivo
   description: >-
-    Toglie un dispositivo dall'elenco di quelli abilitati al tastierino
-    automatico. La chiama la scheda allarme quando spegni l'interruttore.
+    Revoca l'abilitazione di un dispositivo al tastierino automatico. Chiamata
+    dalla scheda allarme: non e' prevista l'invocazione manuale.
   fields:
     dispositivo_id:
       name: Identificativo
-      description: "L'identificativo del dispositivo da revocare."
+      description: "Identificativo del dispositivo da revocare."
       required: true
       example: "a1b2c3d4e5f6"
       selector:
         text:
     entry_id:
       name: Gateway
-      description: "Necessario solo con piu' di un gateway configurato."
+      description: "Richiesto solo con piu' gateway configurati."
       required: false
       selector:
         text:

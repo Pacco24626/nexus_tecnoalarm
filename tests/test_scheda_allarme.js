@@ -1266,10 +1266,10 @@ async function prove() {
     const { scheda } = prepara({ tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] } });
     const d = scheda._el.dispositivo;
     verifica("acceso sull'impianto: la riga compare, spenta qui",
-      d.sezione.hidden === false && d.bottone.textContent === "Attiva qui",
+      d.sezione.hidden === false && d.bottone.textContent === "Abilita",
       d.bottone.textContent);
-    verifica("spento qui: lo dice chiaro",
-      /non si apre da solo/.test(d.stato.textContent), d.stato.textContent);
+    verifica("non abilitato qui: lo dice chiaro",
+      /Non abilitato su questo dispositivo/.test(d.stato.textContent), d.stato.textContent);
   }
   {
     // Si accende: prima la domanda con il nome, poi il servizio.
@@ -1281,11 +1281,11 @@ async function prove() {
       scheda._el.velo.hidden === false && chiamate.length === 0, String(chiamate.length));
     const testo = scheda._el.velo.textContent;
     verifica("la domanda dice che vale solo qui, e non si dilunga",
-      /Vale solo per questo dispositivo\./.test(testo)
+      /vale solo per questo dispositivo\./.test(testo)
       && !/senza averne diritto/.test(testo), testo.slice(0, 120));
     const campo = scheda._el.dialogo.corpo.tutti().find((n) => n.className === "campo-nome");
     campo.value = "  Tablet ingresso  ";
-    azioneDialogo(scheda, "Attiva").click();
+    azioneDialogo(scheda, "Abilita").click();
     await svuota();
     verifica("si registra con nome ripulito e identificativo generato",
       chiamate.length === 1
@@ -1303,7 +1303,7 @@ async function prove() {
       tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] },
     });
     scheda._el.dispositivo.bottone.click();
-    azioneDialogo(scheda, "Attiva").click();
+    azioneDialogo(scheda, "Abilita").click();
     await svuota();
     verifica("nome vuoto: ripiego", chiamate[0].dati.nome === "Dispositivo",
       chiamate[0].dati.nome);
@@ -1320,7 +1320,7 @@ async function prove() {
     scheda._aggiorna();
     const d = scheda._el.dispositivo;
     verifica("abilitato: il pulsante lo dice e si vede il nome",
-      d.bottone.textContent === "Attivo qui" && /Tablet ingresso/.test(d.stato.textContent),
+      d.bottone.textContent === "Disabilita" && /Tablet ingresso/.test(d.stato.textContent),
       d.stato.textContent);
   }
   {
@@ -1334,7 +1334,7 @@ async function prove() {
     scheda._firmaStati = null;
     scheda._aggiorna();
     verifica("identita' locale ma non nell'elenco: non e' abilitato",
-      scheda._el.dispositivo.bottone.textContent === "Attiva qui");
+      scheda._el.dispositivo.bottone.textContent === "Abilita");
   }
   {
     // Si spegne: anche qui prima la domanda.
@@ -1346,7 +1346,7 @@ async function prove() {
     scheda._firmaStati = null;
     scheda._aggiorna();
     scheda._el.dispositivo.bottone.click();
-    azioneDialogo(scheda, "Spegni").click();
+    azioneDialogo(scheda, "Disabilita").click();
     await svuota();
     verifica("spegnimento: si dimentica e si revoca",
       chiamate.length === 1

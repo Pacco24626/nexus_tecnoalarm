@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.6.1";
+const VERSIONE_SCHEDA = "2.6.2";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1240,10 +1240,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     const identita = identitaDispositivo();
     const attivo = abilitatoQui(mappa);
     voce.riga.toggleAttribute("data-attivo", attivo);
-    voce.bottone.textContent = attivo ? "Attivo qui" : "Attiva qui";
+    voce.bottone.textContent = attivo ? "Disabilita" : "Abilita";
     voce.stato.textContent = attivo
-      ? `Quando qualcuno entra, su questo dispositivo si apre il tastierino. Registrato come \u00ab${identita ? identita.nome : ""}\u00bb.`
-      : "Su questo dispositivo il tastierino non si apre da solo quando qualcuno entra.";
+      ? `Abilitato su questo dispositivo come \u00ab${identita ? identita.nome : ""}\u00bb.`
+      : "Non abilitato su questo dispositivo.";
   }
 
   /** Accende o spegne il tastierino automatico su QUESTO dispositivo. */
@@ -1252,13 +1252,13 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     if (abilitatoQui(mappa)) {
       const identita = identitaDispositivo();
       this._apriDialogo({
-        titolo: "Spegnere il tastierino automatico qui?",
+        titolo: "Disabilita tastierino automatico",
         corpo: [
-          el("p", { testo: "Entrando in casa, su questo dispositivo il tastierino non comparira' piu' da solo. Gli altri dispositivi non cambiano." }),
+          el("p", { testo: "Su questo dispositivo il tastierino non verra' piu' aperto automaticamente. Gli altri dispositivi non sono interessati." }),
         ],
         azioni: [
           { etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() },
-          { etichetta: "Spegni", classe: "pericolo", onclick: () => {
+          { etichetta: "Disabilita", classe: "pericolo", onclick: () => {
             this._chiudiDialogo();
             dimenticaIdentita();
             this._hass.callService("nexus_tecnoalarm", "dimentica_dispositivo", {
@@ -1273,23 +1273,23 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     // Il nome serve a riconoscerlo nell'elenco delle opzioni fra sei mesi:
     // lo si chiede adesso, perche' da li' non si puo' piu' cambiare.
     const campo = el("input", { classe: "campo-nome", type: "text",
-      maxlength: "40", placeholder: "Tablet ingresso" });
+      maxlength: "40", placeholder: "Nome del dispositivo" });
     this._apriDialogo({
-      titolo: "Attivare il tastierino su questo dispositivo?",
+      titolo: "Abilita tastierino automatico",
       corpo: [
-        el("p", { testo: "Quando qualcuno entra e l'impianto va in preallarme, qui si aprira' da solo il tastierino per disinserire, sopra qualunque pagina." }),
-        el("p", { testo: "Vale solo per questo dispositivo." }),
+        el("p", { testo: "In preallarme il tastierino di disinserimento viene aperto automaticamente su questo dispositivo, sopra la pagina corrente." }),
+        el("p", { testo: "L'abilitazione vale solo per questo dispositivo." }),
         campo,
       ],
       azioni: [
         { etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() },
-        { etichetta: "Attiva", classe: "pericolo", onclick: () => {
+        { etichetta: "Abilita", classe: "pericolo", onclick: () => {
           const nome = (campo.value || "").trim() || "Dispositivo";
           const identita = identitaDispositivo() || { id: nuovoIdentificativo(), nome };
           identita.nome = nome;
           this._chiudiDialogo();
           if (!salvaIdentita(identita)) {
-            this._mostra("Questo dispositivo non puo' ricordare le impostazioni", "allarme");
+            this._mostra("Impostazione non memorizzabile su questo dispositivo", "allarme");
             return;
           }
           this._hass.callService("nexus_tecnoalarm", "registra_dispositivo", {
