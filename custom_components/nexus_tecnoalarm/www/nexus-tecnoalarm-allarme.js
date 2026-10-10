@@ -68,7 +68,9 @@ const TESTI_ESITO = {
 const TESTI_PROGRAMMA = {
   disinserito: "Disinserito",
   inserito: "Inserito",
+  parzializzato: "Parzializzato",
   transizione: "In inserimento…",
+  ingresso: "Ingresso in corso",
   disinserendo: "In disinserimento…",
   allarme: "In allarme",
   assente: "Non disponibile",
@@ -184,6 +186,23 @@ const STILE = `
   }
   .prog[data-stato="allarme"] { background: var(--allarme-tenue); border-color: var(--allarme); }
   .prog[data-stato="allarme"] ha-state-icon { color: var(--allarme); }
+
+  /* Il parzializzato si veste come l'inserito, perche' inserito e': cambia la
+     parola, non il colore. */
+  .prog[data-stato="parzializzato"] { background: var(--attenzione-tenue); border-color: var(--attenzione); }
+  .prog[data-stato="parzializzato"] ha-state-icon { color: var(--attenzione); }
+
+  /* L'ingresso in corso prende i colori dell'allarme e pulsa: hai venti
+     secondi, e una riga discreta non si guarda. Si distingue dall'allarme
+     vero perche' quello accende anche la fascia rossa in cima, che nasce dal
+     sensore generale della centrale e in preallarme resta spenta. */
+  .prog[data-stato="ingresso"] { background: var(--allarme-tenue); border-color: var(--allarme); }
+  .prog[data-stato="ingresso"] ha-state-icon { color: var(--allarme); }
+  .prog[data-stato="ingresso"] .stato-testo {
+    color: var(--allarme);
+    font-weight: 700;
+    animation: pulsa 1.2s ease-in-out infinite;
+  }
   .prog[data-stato="assente"] { opacity: .5; }
 
   .azione {
@@ -526,18 +545,36 @@ function categoriaProgramma(stato) {
   if (assente(stato)) return "assente";
   const valore = stato.state;
   if (valore === "disarmed") return "disinserito";
-  // Il gateway pubblica 'pending' durante il tempo d'uscita; Home Assistant
-  // chiamerebbe quella fase 'arming'. Si accettano entrambi.
-  if (valore === "pending" || valore === "arming") return "transizione";
+  // 'pending' e' l'INGRESSO in corso: qualcuno e' entrato e il programma sta
+  // contando alla rovescia. Fino alla V0.8.58 il gateway ci mandava li' anche
+  // il tempo d'uscita, e le due fasi finivano insieme sotto «In inserimento…»:
+  // dalla 0.8.59 l'uscita e' 'arming' e questa frase sarebbe l'opposto della
+  // verita' nel momento peggiore.
+  if (valore === "pending") return "ingresso";
+  if (valore === "arming") return "transizione";
   if (valore === "disarming") return "disinserendo";
   if (valore === "triggered") return "allarme";
+  // 'armed_home' e' il programma parzializzato: inserito a meta', e va detto.
+  // Chiamarlo «Inserito» come il totale nasconde proprio la differenza.
+  if (valore === "armed_home") return "parzializzato";
   if (valore.startsWith("armed")) return "inserito";
   return "assente";
 }
 
+/**
+ * Da qui si puo' disinserire.
+ *
+ * «E' inserito?» non si risponde con il solo 'armed_away': durante l'ingresso
+ * il programma e' 'pending' e durante un allarme e' 'triggered', e sono
+ * esattamente i due momenti in cui il pulsante serve di piu'. Senza l'ingresso
+ * in questo elenco, la riga smetterebbe di offrire «Disinserisci» proprio nei
+ * venti secondi che la centrale ti da' per digitare il codice.
+ */
 function disinseribile(stato) {
   const categoria = categoriaProgramma(stato);
-  return categoria === "inserito" || categoria === "transizione" || categoria === "allarme";
+  return categoria === "inserito" || categoria === "parzializzato"
+    || categoria === "transizione" || categoria === "ingresso"
+    || categoria === "allarme";
 }
 
 /** Il testo dello stato come lo scriverebbe Home Assistant, nella sua lingua. */

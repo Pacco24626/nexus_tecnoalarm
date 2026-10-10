@@ -329,11 +329,44 @@ che capita proprio quando la centrale non risponde; Node-RED riparte e la coda, 
 sta in memoria, se ne va. In nessuno dei tre sappiamo com'è andata, e per chi legge
 «non ho conferma» e «non è inserito» sono due cose diverse.
 
-Dal gateway V0.8.55 l'ultimo rifiuto sta anche **negli attributi del pannello** del
-programma (`esito`, `zone_aperte`, `ts`), leggibili con `state_attr` senza passare
-né da questa integrazione né da MQTT. Serve a chi inserisce da un'automazione: la
-chiamata al servizio riesce comunque, e senza guardare il rifiuto un «inserisci alle
-23» risulterebbe eseguito con la casa rimasta disinserita.
+Dal gateway V0.8.55 l'ultimo esito sta anche **negli attributi del pannello** del
+programma (`esito`, `ts`, e dalla V0.8.56 `ok` e `messaggio`), leggibili con
+`state_attr` senza passare né da questa integrazione né da MQTT. Serve a chi
+inserisce da un'automazione: la chiamata al servizio riesce comunque, e senza
+guardare l'esito un «inserisci alle 23» risulterebbe eseguito con la casa rimasta
+disinserita.
+
+**Non cercate lì l'elenco delle zone aperte.** Gli attributi del pannello sono
+*l'ultimo messaggio arrivato*: dalla V0.8.56 su quell'argomento passano anche i
+comandi riusciti, e un successo sovrascrive il rifiuto precedente con un esito che la
+chiave `zone_aperte` non ce l'ha. L'elenco si legge dal **sensore «zone aperte» del
+programma**, che è la sua sede.
+
+### Gli stati del programma
+
+| stato | che cosa vuol dire |
+|---|---|
+| `disarmed` | disinserito |
+| `arming` | tempo d'uscita, o fase di inserimento |
+| `armed_away` | inserito |
+| `armed_home` | **parzializzato** — inserito a metà |
+| `pending` | **ingresso in corso**: qualcuno è entrato e il programma conta alla rovescia |
+| `triggered` | è questo programma ad aver fatto scattare l'allarme |
+
+`pending` e `triggered` arrivano **dalla V0.8.59**; prima `pending` era il tempo
+d'uscita e l'allarme si vedeva solo dal sensore generale della centrale.
+
+**Attenzione a chi scrive automazioni**: la domanda «è inserito?» **non** si risponde
+confrontando con il solo `armed_away`. Durante l'ingresso lo stato è `pending` e
+durante un allarme è `triggered`: un controllo fatto male risponde «no, è
+disinserito» proprio mentre qualcuno sta entrando in casa con l'impianto acceso. Vale
+`armed_away`, `armed_home`, `pending` o `triggered`.
+
+Nella scheda l'ingresso in corso prende i colori dell'allarme e pulsa — hai una
+ventina di secondi, e una riga discreta non si guarda — ma la fascia rossa in cima
+**non** si accende: quella nasce dal sensore generale della centrale, che in
+preallarme resta spento. Riga rossa senza fascia significa «stai entrando»; riga
+rossa con fascia significa «la sirena sta suonando».
 
 ### Il registro eventi
 

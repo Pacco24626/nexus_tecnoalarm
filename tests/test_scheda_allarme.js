@@ -636,6 +636,58 @@ async function prove() {
       String(scheda._el.gruppiZone.filter((g) => !g.blocco.hidden).length));
   }
 
+  // 12-ter. gli stati del programma della V0.8.59
+  {
+    // 'pending' e' l'INGRESSO, non l'uscita. Fino alla 0.8.58 ci finiva anche
+    // il tempo d'uscita; da ora scrivere «In inserimento…» qui sarebbe
+    // l'opposto della verita' mentre qualcuno sta entrando in casa.
+    const { scheda } = prepara({ totale: "pending" });
+    const voce = scheda._el.programmi.get(TOTALE.entity_id);
+    verifica("pending: «Ingresso in corso», non «In inserimento…»",
+      voce.stato.textContent === "Ingresso in corso" && voce.riga.dataset.stato === "ingresso",
+      voce.stato.textContent);
+    verifica("durante l'ingresso si puo' ancora disinserire: e' il momento in cui serve",
+      voce.bottone.hidden === false && voce.bottone.textContent === "Disinserisci");
+  }
+  {
+    // L'uscita resta l'uscita.
+    const { scheda } = prepara({ totale: "arming" });
+    const voce = scheda._el.programmi.get(TOTALE.entity_id);
+    verifica("arming: resta «In inserimento…»",
+      voce.stato.textContent === "In inserimento…" && voce.riga.dataset.stato === "transizione",
+      voce.stato.textContent);
+  }
+  {
+    // Parzializzato: inserito a meta', e va detto. Chiamarlo «Inserito» come
+    // il totale nasconde proprio la differenza che conta.
+    const { scheda } = prepara({ totale: "armed_home" });
+    const voce = scheda._el.programmi.get(TOTALE.entity_id);
+    verifica("armed_home: «Parzializzato», e si disinserisce",
+      voce.stato.textContent === "Parzializzato"
+      && voce.riga.dataset.stato === "parzializzato"
+      && voce.bottone.textContent === "Disinserisci",
+      voce.stato.textContent);
+  }
+  {
+    // Allarme scattato su questo programma: dalla V0.8.59 arriva 'triggered'
+    // sul pannello, non solo sul sensore generale.
+    const { scheda } = prepara({ totale: "triggered" });
+    const voce = scheda._el.programmi.get(TOTALE.entity_id);
+    verifica("triggered: «In allarme», e si disinserisce",
+      voce.stato.textContent === "In allarme" && voce.riga.dataset.stato === "allarme"
+      && voce.bottone.textContent === "Disinserisci",
+      voce.stato.textContent);
+  }
+  {
+    // Il dialogo del codice si apre anche da un programma in ingresso.
+    const { scheda } = prepara({ totale: "pending", notte: "disarmed" });
+    apriDisinserimento(scheda);
+    verifica("ingresso: il tastierino si apre lo stesso",
+      scheda._el.dialogo.velo.hidden === false
+      && tastiDisinserimento(scheda).join("|") === "Disinserisci Totale",
+      tastiDisinserimento(scheda).join("|"));
+  }
+
   // 13. allarme in corso
   {
     const { scheda } = prepara({ allarme: "on" });
