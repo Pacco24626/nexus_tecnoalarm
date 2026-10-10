@@ -368,6 +368,52 @@ ventina di secondi, e una riga discreta non si guarda — ma la fascia rossa in 
 preallarme resta spento. Riga rossa senza fascia significa «stai entrando»; riga
 rossa con fascia significa «la sirena sta suonando».
 
+### Il tastierino che si apre da solo
+
+Entri dalla porta ritardata con l'impianto inserito, il programma va in preallarme e
+hai una ventina di secondi. Con questa funzione, **sul tablet dell'ingresso il
+tastierino per disinserire compare da solo**, sopra qualunque pagina fosse rimasta,
+appena lo schermo torna vivo. Sugli altri dispositivi non cambia niente.
+
+Si accende in due posti, ed è voluto.
+
+**Nelle opzioni dell'integrazione** c'è l'interruttore dell'impianto, spento di
+fabbrica: finché è spento la funzione non esiste e nella scheda non compare nemmeno
+la riga per abilitare un dispositivo. Lì si vede anche **l'elenco dei dispositivi
+abilitati** e si revocano, togliendo la spunta.
+
+**Nella scheda**, su ogni dispositivo, compare allora una riga *Tastierino
+automatico* con un pulsante *Attiva qui*. Lo accendi **camminando fino a quel
+tablet**, e gli dai un nome che ritroverai nelle opzioni. Vale solo per quel
+dispositivo: il telefono in tasca e il tablet della zona notte restano come sono.
+
+La configurazione di una plancia è condivisa fra tutti i dispositivi che la aprono,
+quindi la scelta non può stare lì: **l'identità è del dispositivo, l'autorizzazione
+è del server**. Ogni browser si genera un identificativo e se lo ricorda in locale,
+mentre l'elenco di chi è abilitato vive nelle opzioni. È per questo che **revocare un
+tablet dalle opzioni ha effetto subito**, anche se quel tablet nessuno lo tocca per
+mesi; e dalle opzioni si può solo revocare, perché abilitare richiede di essere lì.
+
+**Perché funziona da qualunque pagina.** Una scheda Lovelace esiste solo mentre la
+sua vista è a schermo: se il tablet sta mostrando un'altra plancia, non c'è nessuno
+che possa aprire niente. Le risorse Lovelace però vengono caricate su **ogni** pagina
+— è così che i tipi di card si registrano — quindi il pezzo che sorveglia il
+preallarme gira sempre, anche dove la scheda non c'è. Su un dispositivo non abilitato
+non fa assolutamente nulla.
+
+Due limiti da conoscere:
+
+- **a schermo spento la pagina è congelata** e nessuno può anticipare il risveglio.
+  Il tastierino compare appena tocchi, senza dover prima navigare da nessuna parte,
+  che è il meglio ottenibile;
+- **un tastierino che si presenta da solo lo vede anche chi è entrato senza averne
+  diritto.** Non gli regala il codice, quindi il rischio è modesto, ma è comodità
+  pagata in sicurezza e va detto a chi la installa.
+
+La finestra si chiude da sé quando il programma torna a riposo, e non si ripresenta
+se l'hai chiusa tu: torna al prossimo ingresso. Con l'allarme già scattato resta
+aperta, perché il codice serve ancora.
+
 ### Il registro eventi
 
 Dalla 2.3.0, se il gateway lo pubblica, la scheda mostra un quinto blocco con gli

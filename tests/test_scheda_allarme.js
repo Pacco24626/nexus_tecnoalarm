@@ -127,7 +127,25 @@ const contesto = {
     define: (nome, classe) => { registrati[nome] = classe; },
   },
   CustomEvent: class { constructor(tipo, init) { this.type = tipo; this.detail = init && init.detail; } },
+  // L'identita' del dispositivo vive qui. Una Map basta: serve ricordare fra
+  // una chiamata e l'altra, non fra un processo e l'altro.
+  localStorage: (() => {
+    const dentro = new Map();
+    return {
+      getItem: (k) => (dentro.has(k) ? dentro.get(k) : null),
+      setItem: (k, v) => { dentro.set(k, String(v)); },
+      removeItem: (k) => { dentro.delete(k); },
+      _svuota: () => dentro.clear(),
+    };
+  })(),
+  // Numeri finti ma stabili: l'identificativo di prova dev'essere prevedibile.
+  crypto: { getRandomValues: (a) => { for (let i = 0; i < a.length; i++) a[i] = i + 1; return a; } },
 };
+contesto.document.querySelector = () => null;
+// Il guardiano del preallarme vive fuori dalla scheda e vuole il frontend di
+// Home Assistant: qui si prova la card, e lo si tiene spento segnandolo come
+// gia' avviato. La sua logica si prova dove si puo', cioe' nei pezzi puri.
+contesto.__nexusTecnoalarmGuardiano = true;
 contesto.window = contesto;
 vm.createContext(contesto);
 
@@ -167,6 +185,9 @@ let scavalcoNellaMappa = false;
 // Impianto senza aree assegnate: il caso di ogni installazione nuova.
 let zoneSenzaArea = false;
 
+// Il tastierino automatico: {tastierino_preallarme, dispositivi_preallarme}.
+let tastierinoNellaMappa = {};
+
 function statoMappa(rifiuti = {}) {
   return stato(MAPPA, "5", {
     ruolo: "mappa_allarme",
@@ -188,17 +209,20 @@ function statoMappa(rifiuti = {}) {
     telecomandi: [{ numero: 1, entity_id: "switch.luce", nome: "Luce" }],
     allarme_generale: "binary_sensor.allarme",
     ...(scavalcoNellaMappa ? { consenti_zone_aperte: "switch.consenti" } : {}),
+    ...tastierinoNellaMappa,
     rifiuti,
   });
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false, tastierino }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
   spieNellaMappa = spie || {};
   scavalcoNellaMappa = Boolean(scavalco);
   zoneSenzaArea = Boolean(senzaArea);
+  tastierinoNellaMappa = tastierino || {};
+  contesto.localStorage._svuota();
   const chiamate = [];
   const scheda = new Scheda();
   const casa = {
@@ -1227,6 +1251,131 @@ async function prove() {
     // abitudine, e fuori da un rifiuto non ha senso.
     const { scheda } = prepara({ totale: "disarmed", notte: "armed_away", scavalco: true });
     verifica("senza rifiuto: nessun dialogo aperto", scheda._el.velo.hidden === true);
+  }
+
+  // 19. il tastierino automatico in preallarme
+  {
+    // Spento sull'impianto: la riga non c'e'. Nessuno si trova un'opzione in
+    // piu' dopo un aggiornamento.
+    const { scheda } = prepara({});
+    verifica("impianto senza la funzione: nessuna riga",
+      scheda._el.dispositivo.sezione.hidden === true);
+  }
+  {
+    // Acceso sull'impianto ma non su questo dispositivo.
+    const { scheda } = prepara({ tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] } });
+    const d = scheda._el.dispositivo;
+    verifica("acceso sull'impianto: la riga compare, spenta qui",
+      d.sezione.hidden === false && d.bottone.textContent === "Attiva qui",
+      d.bottone.textContent);
+    verifica("spento qui: lo dice chiaro",
+      /non si apre da solo/.test(d.stato.textContent), d.stato.textContent);
+  }
+  {
+    // Si accende: prima la domanda con il nome, poi il servizio.
+    const { scheda, chiamate } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] },
+    });
+    scheda._el.dispositivo.bottone.click();
+    verifica("accensione: prima si chiede, e nessun comando parte",
+      scheda._el.velo.hidden === false && chiamate.length === 0, String(chiamate.length));
+    const testo = scheda._el.velo.textContent;
+    verifica("la domanda avverte che e' comodita' pagata in sicurezza",
+      /senza averne diritto/.test(testo));
+    const campo = scheda._el.dialogo.corpo.tutti().find((n) => n.className === "campo-nome");
+    campo.value = "  Tablet ingresso  ";
+    azioneDialogo(scheda, "Attiva").click();
+    await svuota();
+    verifica("si registra con nome ripulito e identificativo generato",
+      chiamate.length === 1
+      && chiamate[0].servizio === "registra_dispositivo"
+      && chiamate[0].dati.nome === "Tablet ingresso"
+      && /^[0-9a-f]{16}$/.test(chiamate[0].dati.dispositivo_id),
+      JSON.stringify(chiamate[0] && chiamate[0].dati));
+    verifica("l'identita' resta su questo dispositivo",
+      JSON.parse(contesto.localStorage.getItem("nexus_tecnoalarm_dispositivo")).nome
+        === "Tablet ingresso");
+  }
+  {
+    // Senza nome digitato non si resta senza: un ripiego c'e'.
+    const { scheda, chiamate } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] },
+    });
+    scheda._el.dispositivo.bottone.click();
+    azioneDialogo(scheda, "Attiva").click();
+    await svuota();
+    verifica("nome vuoto: ripiego", chiamate[0].dati.nome === "Dispositivo",
+      chiamate[0].dati.nome);
+  }
+  {
+    // Abilitato: l'elenco che arriva dal server contiene il nostro
+    // identificativo. E' il server a decidere, non il dispositivo.
+    const { scheda } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: ["0102030405060708"] },
+    });
+    contesto.localStorage.setItem("nexus_tecnoalarm_dispositivo",
+      JSON.stringify({ id: "0102030405060708", nome: "Tablet ingresso" }));
+    scheda._firmaStati = null;
+    scheda._aggiorna();
+    const d = scheda._el.dispositivo;
+    verifica("abilitato: il pulsante lo dice e si vede il nome",
+      d.bottone.textContent === "Attivo qui" && /Tablet ingresso/.test(d.stato.textContent),
+      d.stato.textContent);
+  }
+  {
+    // Revocato dalle opzioni mentre il tablet e' dall'altra parte della casa:
+    // il dispositivo lo scopre subito, perche' l'elenco e' del server.
+    const { scheda } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] },
+    });
+    contesto.localStorage.setItem("nexus_tecnoalarm_dispositivo",
+      JSON.stringify({ id: "0102030405060708", nome: "Tablet ingresso" }));
+    scheda._firmaStati = null;
+    scheda._aggiorna();
+    verifica("identita' locale ma non nell'elenco: non e' abilitato",
+      scheda._el.dispositivo.bottone.textContent === "Attiva qui");
+  }
+  {
+    // Si spegne: anche qui prima la domanda.
+    const { scheda, chiamate } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: ["0102030405060708"] },
+    });
+    contesto.localStorage.setItem("nexus_tecnoalarm_dispositivo",
+      JSON.stringify({ id: "0102030405060708", nome: "Tablet ingresso" }));
+    scheda._firmaStati = null;
+    scheda._aggiorna();
+    scheda._el.dispositivo.bottone.click();
+    azioneDialogo(scheda, "Spegni").click();
+    await svuota();
+    verifica("spegnimento: si dimentica e si revoca",
+      chiamate.length === 1
+      && chiamate[0].servizio === "dimentica_dispositivo"
+      && chiamate[0].dati.dispositivo_id === "0102030405060708"
+      && contesto.localStorage.getItem("nexus_tecnoalarm_dispositivo") === null,
+      JSON.stringify(chiamate[0] && chiamate[0].dati));
+  }
+  {
+    // Modalita' «solo dialogo»: la scheda che il guardiano monta sopra una
+    // pagina qualunque non disegna nulla di suo.
+    timer.length = 0;
+    const scheda = new Scheda();
+    scheda.setConfig({ entity: MAPPA, solo_dialogo: true });
+    scheda.hass = {
+      states: { [MAPPA]: statoMappa({}),
+        [TOTALE.entity_id]: stato(TOTALE.entity_id, "pending"),
+        [NOTTE.entity_id]: stato(NOTTE.entity_id, "disarmed") },
+      formatEntityState: (s) => s.state,
+      callService: async () => {},
+    };
+    verifica("solo dialogo: niente programmi, niente zone, niente registro",
+      scheda._radice.tutti().filter((n) => n.className === "prog").length === 0
+      && scheda._radice.tutti().filter((n) => n.className === "tessera").length === 0);
+    verifica("solo dialogo: il velo c'e' ed e' chiuso",
+      scheda._el.dialogo && scheda._el.velo.hidden === true);
+    scheda._chiediDisinserimento(TOTALE);
+    verifica("solo dialogo: il tastierino si apre lo stesso",
+      scheda._el.velo.hidden === false
+      && scheda._radice.tutti().filter((n) => n.className && n.className.includes("tasto")).length === 12);
   }
 
   // 19. mappa senza centrale

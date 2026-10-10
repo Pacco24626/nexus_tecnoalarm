@@ -8,7 +8,7 @@
  *   0-9 cifre, 10 MEM, 11 EXIT, 12 giu', 13 su', 14 NO, 15 YES.
  */
 
-const VERSIONE_CARD = "2.5.2";
+const VERSIONE_CARD = "2.6.0";
 const BASE_RISORSE = "/nexus_tecnoalarm_local";
 
 /* I tasti nell'ordine dell'apparecchio: cifre a sinistra, comandi nella

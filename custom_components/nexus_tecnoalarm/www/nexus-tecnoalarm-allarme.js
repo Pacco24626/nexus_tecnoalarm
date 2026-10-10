@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.5.2";
+const VERSIONE_SCHEDA = "2.6.0";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -96,6 +96,54 @@ const TASTI = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "C"];
 // tessere, mentre i piani sono due o tre.
 const RAGGRUPPAMENTI = ["piano", "area", "nessuno"];
 const RAGGRUPPA_PREDEFINITO = "piano";
+
+// --- Tastierino automatico in preallarme -----------------------------------
+// L'identita' e' del dispositivo, l'autorizzazione e' del server: questo
+// browser si genera un identificativo e se lo ricorda qui, mentre l'elenco di
+// chi e' abilitato arriva dalla mappa. Cosi' una revoca dalle opzioni ha
+// effetto subito, anche su un tablet che nessuno tocchera' per mesi.
+const CHIAVE_DISPOSITIVO = "nexus_tecnoalarm_dispositivo";
+
+/** L'identita' di questo dispositivo, o null. Non lancia mai. */
+function identitaDispositivo() {
+  try {
+    const grezzo = window.localStorage.getItem(CHIAVE_DISPOSITIVO);
+    const voce = grezzo ? JSON.parse(grezzo) : null;
+    return voce && typeof voce.id === "string" ? voce : null;
+  } catch (errore) {
+    // Finestra anonima, dati del sito bloccati: si vive senza, e il tastierino
+    // automatico semplicemente non si puo' abilitare su questo dispositivo.
+    return null;
+  }
+}
+
+function salvaIdentita(identita) {
+  try {
+    window.localStorage.setItem(CHIAVE_DISPOSITIVO, JSON.stringify(identita));
+    return true;
+  } catch (errore) {
+    return false;
+  }
+}
+
+function dimenticaIdentita() {
+  try { window.localStorage.removeItem(CHIAVE_DISPOSITIVO); } catch (errore) { /* vedi sopra */ }
+}
+
+/** Un identificativo nuovo: sedici caratteri, dal generatore del browser. */
+function nuovoIdentificativo() {
+  const numeri = new Uint8Array(8);
+  (window.crypto || window.msCrypto).getRandomValues(numeri);
+  return Array.from(numeri, (n) => n.toString(16).padStart(2, "0")).join("");
+}
+
+/** Questo dispositivo e' fra quelli abilitati sulla mappa? */
+function abilitatoQui(mappa) {
+  const identita = identitaDispositivo();
+  if (!identita) return false;
+  const elenco = Array.isArray(mappa.dispositivi_preallarme) ? mappa.dispositivi_preallarme : [];
+  return elenco.includes(identita.id);
+}
 
 const STILE = `
   :host { display: block; }
@@ -390,6 +438,33 @@ const STILE = `
     text-transform: uppercase;
     color: var(--secondary-text-color);
     padding: 0 2px 6px;
+  }
+
+  /* --- Tastierino automatico ------------------------------------------------ */
+  .dispositivo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 2px 2px;
+    border-top: 1px solid var(--bordo-tenue);
+  }
+  .dispositivo .testi { gap: 2px; }
+  .dispositivo .nome { font-size: 13px; }
+  .dispositivo .spiega { font-size: 11px; color: var(--secondary-text-color); line-height: 1.35; }
+  .dispositivo button {
+    appearance: none; font: inherit; cursor: pointer; white-space: nowrap;
+    padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--bordo-tenue); background: none;
+    color: var(--secondary-text-color);
+  }
+  .dispositivo[data-attivo] button {
+    border-color: var(--ok); color: var(--ok);
+  }
+  .campo-nome {
+    width: 100%; box-sizing: border-box; margin-top: 8px; padding: 10px 12px;
+    border-radius: 10px; border: 1px solid var(--bordo-tenue);
+    background: var(--fondo-tenue); color: var(--primary-text-color);
+    font: inherit; font-size: 14px;
   }
 
   /* --- Dialogo ------------------------------------------------------------- */
@@ -736,6 +811,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       throw new Error("Indica l'entità della mappa dell'allarme");
     }
     this._config = config;
+    // «Solo dialogo»: la scheda non disegna niente di suo e serve solo a
+    // ospitare il tastierino. La usa il guardiano per farlo comparire sopra
+    // una pagina qualunque, senza duplicare la logica del disinserimento.
+    this._soloDialogo = config.solo_dialogo === true;
     // Un valore scritto a mano che non esiste non deve rompere la scheda: si
     // ripiega sul predefinito, come fa Home Assistant con le sue opzioni.
     this._raggruppa = RAGGRUPPAMENTI.includes(config.raggruppa)
@@ -808,6 +887,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       mappa.allarme_generale,
       mappa.azzera_memorie,
       Boolean(this._idRegistro),
+      Boolean(mappa.tastierino_preallarme),
     ]);
     if (struttura !== this._firmaStruttura || !this._el) {
       this._costruisci(mappa);
@@ -825,6 +905,12 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     if (firma === this._firmaStati) return;
     this._firmaStati = firma;
 
+    if (this._soloDialogo) {
+      this._disegnaMessaggio();
+      this._disegnaDialogo();
+      return;
+    }
+
     this._disegnaAllarme(mappa);
     this._disegnaProgrammi(mappa);
     this._disegnaMessaggio();
@@ -833,6 +919,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._disegnaTelecomandi(mappa);
     this._disegnaMemorie(mappa);
     this._disegnaRegistro();
+    this._disegnaDispositivo(mappa);
   }
 
   /** L'entita' del registro, cercata per attributo e non per identificativo. */
@@ -858,6 +945,9 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       this._idRegistro,
       ...(mappa.programmi || []).map((p) => p.entity_id),
       ...(mappa.programmi || []).map((p) => p.zone_aperte),
+      // L'elenco dei dispositivi abilitati vive negli attributi della mappa:
+      // senza, revocare dalle opzioni non si vedrebbe fino al ricarico.
+      (mappa.dispositivi_preallarme || []).join(","),
       ...(mappa.zone || []).map((z) => z.entity_id),
       ...(mappa.telecomandi || []).map((t) => t.entity_id),
     ];
@@ -888,6 +978,14 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     stile.textContent = STILE;
     this._radice.appendChild(stile);
 
+    if (this._soloDialogo) {
+      // Nessuna ha-card: solo il velo, che e' fisso rispetto alla finestra e
+      // quindi si vede qualunque cosa ci sia sotto.
+      this._el = {};
+      this._radice.appendChild(this._costruisciDialogo());
+      return;
+    }
+
     const card = el("ha-card");
     this._el = { card };
 
@@ -903,6 +1001,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     card.appendChild(this._costruisciTelecomandi(mappa));
     card.appendChild(this._costruisciMemorie(mappa));
     card.appendChild(this._costruisciRegistro());
+    card.appendChild(this._costruisciDispositivo());
     card.appendChild(this._costruisciDialogo());
 
     this._radice.appendChild(card);
@@ -1104,6 +1203,104 @@ class NexusTecnoalarmAllarme extends HTMLElement {
    * disinserimento - perche' due dialoghi aperti insieme non devono poter
    * esistere, e con un velo solo e' impossibile per costruzione.
    */
+  /**
+   * La riga con cui questo dispositivo chiede il tastierino automatico.
+   *
+   * Compare solo se l'impianto ha acceso la funzione nelle opzioni: su chi non
+   * la usa non c'e' nemmeno, e nessuno si trova una riga in piu' dopo un
+   * aggiornamento. L'interruttore vale per QUESTO dispositivo e per nessun
+   * altro, ed e' per questo che si accende camminando fino al tablet.
+   */
+  _costruisciDispositivo() {
+    const bottone = el("button", { type: "button", onclick: () => this._commutaDispositivo() });
+    const stato = el("span", { classe: "spiega" });
+    const riga = el("div", { classe: "dispositivo" }, [
+      el("div", { classe: "testi" }, [
+        el("span", { classe: "nome", testo: "Tastierino automatico" }),
+        stato,
+      ]),
+      bottone,
+    ]);
+    const sezione = el("section", { classe: "blocco", hidden: true }, [riga]);
+    this._el.dispositivo = { sezione, riga, bottone, stato };
+    return sezione;
+  }
+
+  _disegnaDispositivo(mappa) {
+    const voce = this._el && this._el.dispositivo;
+    if (!voce) return;
+
+    // Spento sull'impianto: la riga non esiste proprio.
+    if (!mappa.tastierino_preallarme) {
+      voce.sezione.hidden = true;
+      return;
+    }
+    voce.sezione.hidden = false;
+
+    const identita = identitaDispositivo();
+    const attivo = abilitatoQui(mappa);
+    voce.riga.toggleAttribute("data-attivo", attivo);
+    voce.bottone.textContent = attivo ? "Attivo qui" : "Attiva qui";
+    voce.stato.textContent = attivo
+      ? `Quando qualcuno entra, su questo dispositivo si apre il tastierino. Registrato come \u00ab${identita ? identita.nome : ""}\u00bb.`
+      : "Su questo dispositivo il tastierino non si apre da solo quando qualcuno entra.";
+  }
+
+  /** Accende o spegne il tastierino automatico su QUESTO dispositivo. */
+  _commutaDispositivo() {
+    const mappa = this._mappa();
+    if (abilitatoQui(mappa)) {
+      const identita = identitaDispositivo();
+      this._apriDialogo({
+        titolo: "Spegnere il tastierino automatico qui?",
+        corpo: [
+          el("p", { testo: "Entrando in casa, su questo dispositivo il tastierino non comparira' piu' da solo. Gli altri dispositivi non cambiano." }),
+        ],
+        azioni: [
+          { etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() },
+          { etichetta: "Spegni", classe: "pericolo", onclick: () => {
+            this._chiudiDialogo();
+            dimenticaIdentita();
+            this._hass.callService("nexus_tecnoalarm", "dimentica_dispositivo", {
+              dispositivo_id: identita ? identita.id : "",
+            }).catch((errore) => this._mostra(testoErrore(errore), "allarme"));
+          } },
+        ],
+      });
+      return;
+    }
+
+    // Il nome serve a riconoscerlo nell'elenco delle opzioni fra sei mesi:
+    // lo si chiede adesso, perche' da li' non si puo' piu' cambiare.
+    const campo = el("input", { classe: "campo-nome", type: "text",
+      maxlength: "40", placeholder: "Tablet ingresso" });
+    this._apriDialogo({
+      titolo: "Attivare il tastierino su questo dispositivo?",
+      corpo: [
+        el("p", { testo: "Quando qualcuno entra e l'impianto va in preallarme, qui si aprira' da solo il tastierino per disinserire, sopra qualunque pagina." }),
+        el("p", { testo: "Vale solo per questo dispositivo. Un tastierino che si presenta da solo lo vede anche chi e' entrato senza averne diritto: non gli regala il codice, ma e' comodita' pagata in sicurezza." }),
+        campo,
+      ],
+      azioni: [
+        { etichetta: "Annulla", classe: "annulla", onclick: () => this._chiudiDialogo() },
+        { etichetta: "Attiva", classe: "pericolo", onclick: () => {
+          const nome = (campo.value || "").trim() || "Dispositivo";
+          const identita = identitaDispositivo() || { id: nuovoIdentificativo(), nome };
+          identita.nome = nome;
+          this._chiudiDialogo();
+          if (!salvaIdentita(identita)) {
+            this._mostra("Questo dispositivo non puo' ricordare le impostazioni", "allarme");
+            return;
+          }
+          this._hass.callService("nexus_tecnoalarm", "registra_dispositivo", {
+            dispositivo_id: identita.id,
+            nome: identita.nome,
+          }).catch((errore) => this._mostra(testoErrore(errore), "allarme"));
+        } },
+      ],
+    });
+  }
+
   _costruisciDialogo() {
     const titolo = el("h5");
     const corpo = el("div", { classe: "corpo-dialogo" });
@@ -1154,6 +1351,8 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     const finita = this._suChiusura;
     this._suChiusura = null;
     if (finita) finita();
+    // Chi ha montato la scheda solo per il dialogo deve sapere quando toglierla.
+    this.dispatchEvent(new CustomEvent("nexus-dialogo-chiuso", { bubbles: false }));
   }
 
   _costruisciRegistro() {
@@ -1184,6 +1383,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
   }
 
   _disegnaProgrammi(mappa) {
+    if (!this._el || !this._el.programmi) return;
     for (const programma of mappa.programmi || []) {
       const voce = this._el.programmi.get(programma.entity_id);
       if (!voce) continue;
@@ -1263,7 +1463,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
   }
 
   _disegnaMessaggio() {
-    if (!this._el || !this._el.messaggio) return;
+    if (!this._el) return;
     const messaggio = this._messaggio;
     for (const nodo of [this._el.messaggio, this._el.dialogo && this._el.dialogo.messaggio]) {
       if (!nodo) continue;
@@ -1273,7 +1473,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     }
     // Vuoto, sotto i programmi, lascerebbe un buco: nel dialogo invece lo
     // spazio si tiene, o la finestra sobbalza quando compare il messaggio.
-    this._el.messaggio.hidden = !messaggio;
+    if (this._el.messaggio) this._el.messaggio.hidden = !messaggio;
   }
 
   /** Il dialogo di disinserimento, quando e' aperto. */
@@ -1970,6 +2170,113 @@ class NexusTecnoalarmAllarmeEditor extends HTMLElement {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Guardiano del preallarme
+// -----------------------------------------------------------------------------
+/**
+ * Fa comparire il tastierino quando qualcuno entra, sui soli dispositivi
+ * abilitati e sopra qualunque pagina.
+ *
+ * Sta qui e non dentro la scheda per un motivo preciso: una card esiste solo
+ * mentre la sua vista e' a schermo, e se il tablet sta mostrando Clima non c'e'
+ * nessuno che possa aprire niente. Le risorse Lovelace invece vengono caricate
+ * su OGNI pagina - e' cosi' che i tipi di card si registrano - quindi questo
+ * pezzo gira sempre. E' lo stesso meccanismo di browser_mod, senza browser_mod.
+ *
+ * Su un dispositivo non abilitato non fa assolutamente nulla: esce subito.
+ */
+const ATTESA_FRONTEND_MS = 2000;
+
+function hassCorrente() {
+  // Oggetto interno del frontend, non interfaccia pubblica: un aggiornamento
+  // di Home Assistant puo' spostarlo. Se non c'e', il guardiano tace e la
+  // scheda resta quella di sempre.
+  const radice = document.querySelector("home-assistant");
+  return (radice && radice.hass) || null;
+}
+
+function mappaDa(hass) {
+  for (const id of Object.keys(hass.states)) {
+    const stato = hass.states[id];
+    if (stato.attributes && stato.attributes.ruolo === "mappa_allarme") return stato;
+  }
+  return null;
+}
+
+function avviaGuardiano() {
+  if (window.__nexusTecnoalarmGuardiano) return;
+  window.__nexusTecnoalarmGuardiano = true;
+
+  let montata = null;      // la scheda «solo dialogo», mentre e' in pagina
+  let episodio = null;     // l'entita' del programma per cui si e' gia' aperto
+  let disiscrivi = null;
+
+  const smonta = () => {
+    if (!montata) return;
+    const vecchia = montata;
+    montata = null;
+    vecchia.remove();
+  };
+
+  const guarda = () => {
+    const hass = hassCorrente();
+    if (!hass) return;
+    const mappa = mappaDa(hass);
+    if (!mappa) return;
+
+    const programmi = mappa.attributes.programmi || [];
+    const inCorso = programmi.find((p) => {
+      const stato = hass.states[p.entity_id];
+      // 'triggered' non chiude l'episodio: la sirena suona e il codice serve
+      // ancora. Si chiude quando il programma torna a riposo.
+      return stato && (stato.state === "pending" || stato.state === "triggered");
+    });
+
+    if (!inCorso) {
+      // Fine dell'ingresso: via il tastierino, e si torna disponibili per la
+      // prossima volta.
+      episodio = null;
+      smonta();
+      return;
+    }
+
+    if (montata) {
+      montata.hass = hass;
+      return;
+    }
+    // Chiuso a mano durante questo episodio: non si ripresenta addosso.
+    if (episodio === inCorso.entity_id) return;
+    if (!mappa.attributes.tastierino_preallarme) return;
+    if (!abilitatoQui(mappa.attributes)) return;
+
+    episodio = inCorso.entity_id;
+    const carta = document.createElement("nexus-tecnoalarm-allarme");
+    carta.setConfig({ entity: mappa.entity_id, solo_dialogo: true });
+    document.body.appendChild(carta);
+    carta.hass = hass;
+    carta.addEventListener("nexus-dialogo-chiuso", smonta);
+    montata = carta;
+    carta._chiediDisinserimento(inCorso);
+  };
+
+  const aggancia = () => {
+    const hass = hassCorrente();
+    if (!hass || !hass.connection) {
+      window.setTimeout(aggancia, ATTESA_FRONTEND_MS);
+      return;
+    }
+    if (disiscrivi) return;
+    hass.connection
+      .subscribeEvents(guarda, "state_changed")
+      .then((stop) => { disiscrivi = stop; })
+      .catch(() => { window.setTimeout(aggancia, ATTESA_FRONTEND_MS); });
+    // Un ingresso puo' essere gia' in corso mentre la pagina si sveglia.
+    guarda();
+  };
+
+  aggancia();
+}
+
 // Registrazione idempotente e non fatale, come per la tastiera: un doppio
 // caricamento non deve lanciare, e un'eccezione qui non deve poter impedire
 // il boot dell'interfaccia.
@@ -1986,6 +2293,8 @@ try {
       preview: false,
       documentationURL: "https://github.com/Pacco24626/nexus_tecnoalarm",
     });
+
+    avviaGuardiano();
 
     console.info(
       `%c NEXUS-TECNOALARM-ALLARME %c ${VERSIONE_SCHEDA} `,
