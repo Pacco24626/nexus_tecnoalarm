@@ -32,6 +32,7 @@ from .const import (
     CARD_URL_BASE,
     CONF_DISPOSITIVI_PREALLARME,
     DOMAIN,
+    GUARDIANO_FILENAME,
     PLATFORMS,
     SERVICE_DIMENTICA_DISPOSITIVO,
     SERVICE_KEYPAD_PRESENCE,
@@ -142,6 +143,22 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         nome: f"{CARD_URL_BASE}/{nome}?v={integration.version}" for nome in CARD_FILES
     }
 
+    # Il guardiano del preallarme deve girare su OGNI pagina: le risorse
+    # Lovelace le carica il pannello Lovelace, e dalla 2026.10 la pagina
+    # iniziale di Home Assistant e' il pannello «home», che plancia non e'. Un
+    # tablet lasciato li' non avrebbe nessuno in ascolto. `add_extra_js_url`
+    # mette il modulo nell'indice del frontend, uguale per tutti i pannelli.
+    #
+    # Qui ci va il guardiano e NON la scheda, e la differenza e' sostanziale: i
+    # moduli del frontend girano prima che Home Assistant installi il registro
+    # che sostituisce `window.customElements`, e una card registrata a quel
+    # punto Lovelace non la trova piu' («Custom element doesn't exist»). Il
+    # guardiano non definisce nessun elemento, quindi parte presto senza danno
+    # e la scheda la carica lui quando serve.
+    add_extra_js_url(
+        hass, f"{CARD_URL_BASE}/{GUARDIANO_FILENAME}?v={integration.version}"
+    )
+
     async def _registra_tutte() -> None:
         for nome, url in urls.items():
             await _async_registra_risorsa(hass, nome, url)
@@ -238,6 +255,11 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def handle_send_key(call: ServiceCall) -> None:
         gateway = _seleziona(call)
+        # Spenta e non connessa sono due cose diverse, e chi legge l'errore sta
+        # cercando di capire quale: una si risolve con un interruttore, l'altra
+        # andando a vedere perche' il gateway non risponde.
+        if not gateway.accesa:
+            raise HomeAssistantError("Tastiera remota spenta: tasto non inviato")
         if not await gateway.async_send_key(call.data[ATTR_KEY_CODE]):
             raise HomeAssistantError("Tastiera non connessa: tasto non inviato")
 

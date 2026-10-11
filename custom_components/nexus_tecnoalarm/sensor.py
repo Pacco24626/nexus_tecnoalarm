@@ -31,6 +31,7 @@ from .const import (
 from .dispositivi import identificativi
 from .entity import KeypadEntity
 from .gateway import KeypadGateway
+from .mappa import GATEWAY_INGRESSO, almeno_versione
 
 
 async def async_setup_entry(
@@ -139,12 +140,30 @@ class MappaAllarmeSensor(SensorEntity):
         }
 
     @property
+    def _gateway(self) -> dict[str, Any]:
+        """Che cosa sa fare il gateway che abbiamo davanti.
+
+        Si pubblica la **capacita'** e non solo il numero: la regola «dalla
+        0.8.59 `pending` e' l'ingresso» sta scritta in un posto solo, in
+        `mappa.almeno_versione`, e la scheda e il guardiano leggono un si'/no.
+        Due file JavaScript che confrontano versioni per conto loro sarebbero
+        due posti dove sbagliarla. Il numero viaggia lo stesso, perche' in
+        diagnosi serve sapere con chi si sta parlando.
+        """
+        versione = self._mappa.versione_gateway if self._mappa is not None else None
+        return {
+            "versione_gateway": versione,
+            "ingresso_distinto": almeno_versione(versione, GATEWAY_INGRESSO),
+        }
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         if self._mappa is None:
-            return {"ruolo": RUOLO_MAPPA, **self._tastierino}
+            return {"ruolo": RUOLO_MAPPA, **self._tastierino, **self._gateway}
         return {
             "ruolo": RUOLO_MAPPA,
             **self._mappa.mappa,
             "rifiuti": self._mappa.rifiuti,
             **self._tastierino,
+            **self._gateway,
         }

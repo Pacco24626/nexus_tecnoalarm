@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.6.2";
+const VERSIONE_SCHEDA = "2.8.0";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -62,8 +62,18 @@ const TESTI_ESITO = {
   // «Nessuna risposta» direbbe che la centrale tace, e non e' detto: il
   // comando puo' essere sparito prima, e in tutti i casi quello che sappiamo
   // davvero e' solo che non ci e' tornata una conferma.
+  //
+  // Due nomi per lo stesso fatto, visto dai due capi della catena: `timeout` lo
+  // dichiariamo noi quando scade la nostra attesa, `nessuna_risposta` lo dichiara
+  // il gateway (V0.8.60) quando la centrale non risponde entro 4 secondi. In
+  // nessuno dei due casi si puo' dire «non eseguito»: il comando puo' essere
+  // arrivato e la risposta essersi persa.
   timeout: "Nessuna conferma dalla centrale",
+  nessuna_risposta: "Nessuna conferma dalla centrale",
 };
+
+/** Gli esiti che dicono «non lo so», e vanno detti in tono d'attenzione. */
+const ESITI_INCERTI = ["timeout", "nessuna_risposta"];
 
 const TESTI_PROGRAMMA = {
   disinserito: "Disinserito",
@@ -94,6 +104,13 @@ const TASTI = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "C"];
 // Come si raggruppano le zone. Il predefinito e' il piano: su un impianto da
 // trenta zone le aree sono una dozzina, cioe' un'intestazione ogni due
 // tessere, mentre i piani sono due o tre.
+// Quanto si aspetta prima di dire che la mappa non c'e' piu'. Il buco piu'
+// lungo misurato e' una discovery ripubblicata, 55 secondi; dopo un riavvio di
+// Home Assistant la plancia ci mette anche piu' di un minuto a ripopolarsi.
+// Novanta secondi li coprono tutti e due, e restano abbastanza pochi perche'
+// un'integrazione davvero rimossa finisca per dirlo.
+const ATTESA_MAPPA_MS = 90000;
+
 const RAGGRUPPAMENTI = ["piano", "area", "nessuno"];
 const RAGGRUPPA_PREDEFINITO = "piano";
 
@@ -171,6 +188,22 @@ const STILE = `
 
   .blocco { display: flex; flex-direction: column; gap: 10px; }
 
+  /* --- In attesa dei dati -------------------------------------------------- */
+  .attesa {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--fondo-tenue);
+    border: 1px solid var(--bordo-tenue);
+    color: var(--secondary-text-color);
+    font-size: 13px;
+  }
+  /* Quello che c'e' a schermo resta leggibile ma smorzato: e' l'ultima lettura,
+     non lo stato di adesso, e la differenza va vista senza doverla leggere. */
+  ha-card[data-attesa] .blocco { opacity: .5; }
+
   .intestazione { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   h3 {
     margin: 0;
@@ -201,6 +234,16 @@ const STILE = `
     animation: pulsa 1.2s ease-in-out infinite;
   }
   @keyframes pulsa { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
+  /* La memoria non e' una sirena che suona: resta in vista finche' non la si
+     azzera, quindi non lampeggia e non grida. */
+  .banner[data-memoria] {
+    background: none;
+    border: 1px solid var(--allarme);
+    color: var(--allarme);
+    animation: none;
+    text-transform: none;
+    letter-spacing: 0;
+  }
 
   /* --- Programmi ---------------------------------------------------------- */
   .programmi { display: flex; flex-direction: column; gap: 6px; }
@@ -551,6 +594,10 @@ const STILE = `
     background: rgba(31, 41, 51, .4);
     z-index: 3;
   }
+  /* Montato sopra una pagina qualunque dal tastierino automatico, il velo deve
+     passare davanti anche alla barra laterale e all'intestazione di Home
+     Assistant, che su z-index 3 vincono. */
+  .velo.sopra { z-index: 10; }
   .dialogo {
     /* width E max-width. Con il solo max-width il riquadro si stringe sul
        contenuto, e il tastierino dentro - che e' largo 100% del genitore -
@@ -615,17 +662,31 @@ function assente(stato) {
   return !stato || stato.state === "unavailable" || stato.state === "unknown";
 }
 
-/** Lo stato di un programma, ridotto a cio' che la scheda deve distinguere. */
-function categoriaProgramma(stato) {
+/**
+ * Il gateway distingue l'ingresso dall'uscita (V0.8.59 e successive)?
+ *
+ * Il confronto fra versioni lo fa l'integrazione, che e' anche l'unica a poter
+ * leggere `sw_version` dal registro dei dispositivi: qui arriva gia' un si'/no.
+ * Assente vale no, cioe' gateway vecchio: e' il verso prudente.
+ */
+function distingueIngresso(mappa) {
+  return Boolean(mappa && mappa.ingresso_distinto);
+}
+
+/**
+ * Lo stato di un programma, ridotto a cio' che la scheda deve distinguere.
+ *
+ * `ingressoDistinto` dice se il gateway davanti a noi e' almeno la V0.8.59.
+ * Prima di quella, `pending` era il tempo d'USCITA e le due fasi finivano
+ * insieme sotto «In inserimento…»; da li' in poi l'uscita e' 'arming' e
+ * `pending` e' qualcuno che e' entrato. Chiamarlo «Ingresso in corso» su un
+ * gateway vecchio sarebbe l'opposto della verita' nel momento peggiore.
+ */
+function categoriaProgramma(stato, ingressoDistinto = true) {
   if (assente(stato)) return "assente";
   const valore = stato.state;
   if (valore === "disarmed") return "disinserito";
-  // 'pending' e' l'INGRESSO in corso: qualcuno e' entrato e il programma sta
-  // contando alla rovescia. Fino alla V0.8.58 il gateway ci mandava li' anche
-  // il tempo d'uscita, e le due fasi finivano insieme sotto «In inserimento…»:
-  // dalla 0.8.59 l'uscita e' 'arming' e questa frase sarebbe l'opposto della
-  // verita' nel momento peggiore.
-  if (valore === "pending") return "ingresso";
+  if (valore === "pending") return ingressoDistinto ? "ingresso" : "transizione";
   if (valore === "arming") return "transizione";
   if (valore === "disarming") return "disinserendo";
   if (valore === "triggered") return "allarme";
@@ -658,10 +719,26 @@ function formatta(hass, stato) {
   return typeof hass.formatEntityState === "function" ? hass.formatEntityState(stato) : stato.state;
 }
 
+/**
+ * Un attributo di zona acceso.
+ *
+ * Il gateway le pubblica come **stringhe** `"ON"`/`"OFF"`, non come booleani:
+ * misurato sull'impianto di casa il 10/10/2026, 29 zone per 12 attributi, tutti
+ * stringhe. Un confronto con `true` non accendeva mai niente. Si accettano
+ * entrambe le forme, perche' il giorno che diventassero booleane nessuno
+ * verrebbe ad avvisarci, e tutto il resto vale spento.
+ */
+function attributoAcceso(valore) {
+  if (valore === true || valore === 1) return true;
+  if (typeof valore !== "string") return false;
+  const pulito = valore.trim().toLowerCase();
+  return pulito === "on" || pulito === "true" || pulito === "1";
+}
+
 function bandierineDi(attributi) {
   const presenti = [];
   for (const bandierina of BANDIERINE) {
-    if (bandierina.chiavi.some((chiave) => attributi && attributi[chiave] === true)) {
+    if (bandierina.chiavi.some((chiave) => attributi && attributoAcceso(attributi[chiave]))) {
       presenti.push(bandierina);
     }
   }
@@ -845,6 +922,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
   disconnectedCallback() {
     clearTimeout(this._timerCodice);
     clearTimeout(this._timerMessaggio);
+    clearTimeout(this._timerMappa);
   }
 
   _mappa() {
@@ -860,9 +938,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
 
     const stato = this._hass.states[this._config.entity];
     if (!stato) {
-      this._avviso(`Entità ${this._config.entity} non trovata.`);
+      this._mappaMancante();
       return;
     }
+    this._mappaTornata();
 
     const mappa = stato.attributes || {};
     if (mappa.dispositivo_trovato === false) {
@@ -888,6 +967,9 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       mappa.azzera_memorie,
       Boolean(this._idRegistro),
       Boolean(mappa.tastierino_preallarme),
+      // Aggiornare il gateway cambia cosa la scheda puo' offrire: la riga del
+      // tastierino automatico compare solo dalla V0.8.59.
+      distingueIngresso(mappa),
     ]);
     if (struttura !== this._firmaStruttura || !this._el) {
       this._costruisci(mappa);
@@ -959,6 +1041,44 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       .join("|");
   }
 
+  /**
+   * La mappa non c'e'. Non e' detto che sia un guasto.
+   *
+   * Mai vista vuol dire entita' sbagliata nella configurazione della scheda, e
+   * va detto subito a chi la sta scrivendo. Vista e poi sparita vuol dire quasi
+   * sempre un'attesa: una discovery ripubblicata, un broker riavviato, Home
+   * Assistant che si ripopola. Li' si tiene cio' che c'e' a schermo, smorzato,
+   * e solo dopo ATTESA_MAPPA_MS si passa all'avviso.
+   */
+  _mappaMancante() {
+    // Montata solo per ospitare il tastierino: non ha niente da smorzare e un
+    // riquadro rosso a mezzo schermo sarebbe peggio del silenzio.
+    if (this._soloDialogo) return;
+
+    if (!this._vistaUnaVolta || !this._el || !this._el.attesa) {
+      this._avviso(`Entità ${this._config.entity} non trovata.`);
+      return;
+    }
+
+    this._el.attesa.hidden = false;
+    if (this._el.card) this._el.card.toggleAttribute("data-attesa", true);
+    if (this._timerMappa) return;
+    this._timerMappa = setTimeout(() => {
+      this._timerMappa = null;
+      this._avviso(`Entità ${this._config.entity} non trovata.`);
+    }, ATTESA_MAPPA_MS);
+  }
+
+  /** La mappa c'e': si annulla l'attesa e si torna a mostrare lo stato vero. */
+  _mappaTornata() {
+    this._vistaUnaVolta = true;
+    clearTimeout(this._timerMappa);
+    this._timerMappa = null;
+    if (!this._el) return;
+    if (this._el.attesa) this._el.attesa.hidden = true;
+    if (this._el.card) this._el.card.removeAttribute("data-attesa");
+  }
+
   _avviso(testo) {
     this._radice.innerHTML = "";
     const stile = el("style");
@@ -989,12 +1109,23 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     const card = el("ha-card");
     this._el = { card };
 
-    // Allarme in corso: una fascia rossa che non si puo' non vedere.
+    // Allarme in corso: una fascia rossa che non si puo' non vedere. La stessa
+    // fascia, in tono minore, porta la memoria rimasta dopo un allarme.
+    this._el.bannerIcona = el("ha-icon", { icon: "mdi:alarm-light" });
+    this._el.bannerTesto = el("span", { testo: "Allarme in corso" });
     this._el.banner = el("div", { classe: "banner", role: "alert", hidden: true }, [
-      el("ha-icon", { icon: "mdi:alarm-light" }),
-      el("span", { testo: "Allarme in corso" }),
+      this._el.bannerIcona,
+      this._el.bannerTesto,
     ]);
     card.appendChild(this._el.banner);
+
+    // In attesa dei dati: la riga sta in cima, sopra i programmi, perche' dice
+    // di tutto quello che segue che non e' piu' fresco.
+    this._el.attesa = el("div", { classe: "attesa", hidden: true }, [
+      el("ha-icon", { icon: "mdi:timer-sand" }),
+      el("span", { testo: "In attesa dei dati dell'impianto" }),
+    ]);
+    card.appendChild(this._el.attesa);
 
     card.appendChild(this._costruisciProgrammi(mappa));
     card.appendChild(this._costruisciZone(mappa));
@@ -1230,8 +1361,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     const voce = this._el && this._el.dispositivo;
     if (!voce) return;
 
-    // Spento sull'impianto: la riga non esiste proprio.
-    if (!mappa.tastierino_preallarme) {
+    // Spento sull'impianto, o gateway che non distingue l'ingresso: la riga non
+    // esiste proprio. Offrirla su un gateway vecchio vorrebbe dire far accendere
+    // un tastierino a ogni inserimento, perche' li' 'pending' e' l'uscita.
+    if (!mappa.tastierino_preallarme || !distingueIngresso(mappa)) {
       voce.sezione.hidden = true;
       return;
     }
@@ -1308,7 +1441,8 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     const azioni = el("div", { classe: "azioni-dialogo" });
     const riquadro = el("div", { classe: "dialogo", role: "dialog", "aria-modal": "true" },
       [titolo, corpo, messaggio, azioni]);
-    const velo = el("div", { classe: "velo", hidden: true, onclick: (evento) => {
+    const velo = el("div", { classe: this._soloDialogo ? "velo sopra" : "velo",
+      hidden: true, onclick: (evento) => {
       // Solo il velo, non il riquadro: un tocco dentro il dialogo non lo chiude.
       if (evento && evento.target === velo) this._chiudiDialogo();
     } }, [riquadro]);
@@ -1376,10 +1510,51 @@ class NexusTecnoalarmAllarme extends HTMLElement {
   // Disegno
   // ---------------------------------------------------------------------
   _disegnaAllarme(mappa) {
-    const stato = mappa.allarme_generale && this._hass.states[mappa.allarme_generale];
-    // L'allarme in corso non si legge dai programmi, che non pubblicano mai
-    // 'triggered': si legge dal sensore di allarme generale della centrale.
-    this._el.banner.hidden = !(stato && stato.state === "on");
+    // Un programma in 'triggered' e' la sirena che sta suonando adesso. Lo
+    // pubblica il gateway dalla V0.8.59; prima non lo faceva, ed e' per questo
+    // che qui si guardava solo il sensore di allarme generale della centrale.
+    //
+    // Quel sensore pero' e' una memoria: resta acceso a impianto disinserito
+    // finche' non si azzerano le memorie, e da solo continuerebbe ad annunciare
+    // «allarme in corso» per giorni dopo che e' finito tutto.
+    const acceso = (entita) => {
+      const stato = entita && this._hass.states[entita];
+      return Boolean(stato) && stato.state === "on";
+    };
+    const inCorso = distingueIngresso(mappa)
+      ? (mappa.programmi || []).some(
+          (p) => (this._hass.states[p.entity_id] || {}).state === "triggered"
+        )
+      // Prima della V0.8.59 nessun programma va mai in 'triggered': l'unica
+      // notizia di un allarme in corso e' il sensore generale, con tutti i suoi
+      // limiti. Senza questo ripiego, su un gateway vecchio la fascia direbbe
+      // «memoria» mentre la sirena suona.
+      : acceso(mappa.allarme_generale);
+    // Due sorgenti per la memoria, perche' nessuna delle due basta da sola: su
+    // due allarmi di fila l'allarme generale si e' acceso solo al primo, mentre
+    // la spia delle memorie si e' accesa a tutti e due (misurato il 10/10/2026).
+    const generale = acceso(mappa.allarme_generale);
+    const memorie = acceso(mappa.memorie);
+    const memoria = !inCorso && (generale || memorie);
+
+    this._el.banner.hidden = !inCorso && !memoria;
+    this._el.banner.toggleAttribute("data-memoria", memoria);
+    this._el.bannerIcona.setAttribute("icon", memoria ? "mdi:bell-badge" : "mdi:alarm-light");
+    // La spia delle memorie non parla solo di allarmi: copre anche rete KO,
+    // batteria KO e manomissioni. Da sola dice che c'e' qualcosa da azzerare,
+    // non che c'e' stato un allarme.
+    //
+    // Le memorie hanno la precedenza sul generale, e serve a non sfarfallare:
+    // dalla V0.8.60 il generale si rilegge entro ~6 secondi anche quando si
+    // spegne, quindi dopo un allarme la fascia passerebbe per «Allarme in
+    // memoria» giusto il tempo di leggerlo, per poi assestarsi su «Memoria da
+    // azzerare». Due cambi di parole in sei secondi non informano nessuno.
+    // Entrambe sono vere in quel momento: si sceglie quella che resta.
+    this._el.bannerTesto.textContent = !memoria
+      ? "Allarme in corso"
+      : memorie
+        ? "Memoria da azzerare"
+        : "Allarme in memoria";
   }
 
   _disegnaProgrammi(mappa) {
@@ -1388,7 +1563,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       const voce = this._el.programmi.get(programma.entity_id);
       if (!voce) continue;
       const stato = this._hass.states[programma.entity_id];
-      const categoria = categoriaProgramma(stato);
+      const categoria = categoriaProgramma(stato, distingueIngresso(mappa));
 
       voce.icona.hass = this._hass;
       voce.icona.stateObj = stato;
@@ -2022,7 +2197,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
           || `Il gateway non ha eseguito il comando (${esito.esito})`;
         this._mostra(
           this._conProgressi(testo, riusciti, programmi.length),
-          esito.esito === "timeout" ? "attenzione" : "allarme"
+          ESITI_INCERTI.includes(esito.esito) ? "attenzione" : "allarme"
         );
         return;
       }
@@ -2174,107 +2349,31 @@ class NexusTecnoalarmAllarmeEditor extends HTMLElement {
 // Guardiano del preallarme
 // -----------------------------------------------------------------------------
 /**
- * Fa comparire il tastierino quando qualcuno entra, sui soli dispositivi
- * abilitati e sopra qualunque pagina.
+ * Il guardiano — il pezzo che apre il tastierino quando qualcuno entra — vive
+ * in `nexus-tecnoalarm-guardiano.js`, non qui.
  *
- * Sta qui e non dentro la scheda per un motivo preciso: una card esiste solo
- * mentre la sua vista e' a schermo, e se il tablet sta mostrando Clima non c'e'
- * nessuno che possa aprire niente. Le risorse Lovelace invece vengono caricate
- * su OGNI pagina - e' cosi' che i tipi di card si registrano - quindi questo
- * pezzo gira sempre. E' lo stesso meccanismo di browser_mod, senza browser_mod.
+ * Deve girare su OGNI pagina, quindi va caricato fra i moduli del frontend; ma
+ * quei moduli girano PRIMA che Home Assistant installi il registro «scoped»
+ * che sostituisce `window.customElements`, e una card registrata a quel punto
+ * finisce nel registro sbagliato: Lovelace risponde «Custom element doesn't
+ * exist». E' successo davvero il 10/10/2026, con la scheda intera fra i moduli
+ * del frontend. Il guardiano invece non definisce nessun elemento, quindi puo'
+ * partire prestissimo senza danno, e la scheda la carica lui a richiesta.
  *
- * Su un dispositivo non abilitato non fa assolutamente nulla: esce subito.
+ * Lo si carica anche da qui perche' un dispositivo che ha ancora in cache il
+ * guscio vecchio della pagina non ha ricevuto il modulo nuovo: aprire una
+ * plancia basta a rimetterlo in moto. E' idempotente.
  */
-const ATTESA_FRONTEND_MS = 2000;
-
-function hassCorrente() {
-  // Oggetto interno del frontend, non interfaccia pubblica: un aggiornamento
-  // di Home Assistant puo' spostarlo. Se non c'e', il guardiano tace e la
-  // scheda resta quella di sempre.
-  const radice = document.querySelector("home-assistant");
-  return (radice && radice.hass) || null;
-}
-
-function mappaDa(hass) {
-  for (const id of Object.keys(hass.states)) {
-    const stato = hass.states[id];
-    if (stato.attributes && stato.attributes.ruolo === "mappa_allarme") return stato;
-  }
-  return null;
-}
-
-function avviaGuardiano() {
+function caricaGuardiano() {
   if (window.__nexusTecnoalarmGuardiano) return;
-  window.__nexusTecnoalarmGuardiano = true;
-
-  let montata = null;      // la scheda «solo dialogo», mentre e' in pagina
-  let episodio = null;     // l'entita' del programma per cui si e' gia' aperto
-  let disiscrivi = null;
-
-  const smonta = () => {
-    if (!montata) return;
-    const vecchia = montata;
-    montata = null;
-    vecchia.remove();
-  };
-
-  const guarda = () => {
-    const hass = hassCorrente();
-    if (!hass) return;
-    const mappa = mappaDa(hass);
-    if (!mappa) return;
-
-    const programmi = mappa.attributes.programmi || [];
-    const inCorso = programmi.find((p) => {
-      const stato = hass.states[p.entity_id];
-      // 'triggered' non chiude l'episodio: la sirena suona e il codice serve
-      // ancora. Si chiude quando il programma torna a riposo.
-      return stato && (stato.state === "pending" || stato.state === "triggered");
-    });
-
-    if (!inCorso) {
-      // Fine dell'ingresso: via il tastierino, e si torna disponibili per la
-      // prossima volta.
-      episodio = null;
-      smonta();
-      return;
-    }
-
-    if (montata) {
-      montata.hass = hass;
-      return;
-    }
-    // Chiuso a mano durante questo episodio: non si ripresenta addosso.
-    if (episodio === inCorso.entity_id) return;
-    if (!mappa.attributes.tastierino_preallarme) return;
-    if (!abilitatoQui(mappa.attributes)) return;
-
-    episodio = inCorso.entity_id;
-    const carta = document.createElement("nexus-tecnoalarm-allarme");
-    carta.setConfig({ entity: mappa.entity_id, solo_dialogo: true });
-    document.body.appendChild(carta);
-    carta.hass = hass;
-    carta.addEventListener("nexus-dialogo-chiuso", smonta);
-    montata = carta;
-    carta._chiediDisinserimento(inCorso);
-  };
-
-  const aggancia = () => {
-    const hass = hassCorrente();
-    if (!hass || !hass.connection) {
-      window.setTimeout(aggancia, ATTESA_FRONTEND_MS);
-      return;
-    }
-    if (disiscrivi) return;
-    hass.connection
-      .subscribeEvents(guarda, "state_changed")
-      .then((stop) => { disiscrivi = stop; })
-      .catch(() => { window.setTimeout(aggancia, ATTESA_FRONTEND_MS); });
-    // Un ingresso puo' essere gia' in corso mentre la pagina si sveglia.
-    guarda();
-  };
-
-  aggancia();
+  try {
+    const mio = document.querySelector('script[src*="nexus-tecnoalarm-allarme.js"]');
+    const base = mio && mio.src ? mio.src : "/nexus_tecnoalarm_local/nexus-tecnoalarm-allarme.js";
+    import(base.replace("nexus-tecnoalarm-allarme.js", "nexus-tecnoalarm-guardiano.js"))
+      .catch((errore) => console.warn("nexus-tecnoalarm: guardiano non caricato", errore));
+  } catch (errore) {
+    // Ambiente senza import dinamico: si prosegue, la scheda funziona lo stesso.
+  }
 }
 
 // Registrazione idempotente e non fatale, come per la tastiera: un doppio
@@ -2294,7 +2393,7 @@ try {
       documentationURL: "https://github.com/Pacco24626/nexus_tecnoalarm",
     });
 
-    avviaGuardiano();
+    caricaGuardiano();
 
     console.info(
       `%c NEXUS-TECNOALARM-ALLARME %c ${VERSIONE_SCHEDA} `,

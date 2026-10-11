@@ -16,8 +16,10 @@ sys.path.insert(
 
 try:
     from mappa import (
+        GATEWAY_INGRESSO,
         Candidato,
         Voce,
+        almeno_versione,
         classifica,
         con_rifiuto,
         mappa_vuota,
@@ -464,6 +466,53 @@ verifica("due di MQTT: scelta stabile, non a caso",
          scegli_centrale([Candidato("b", frozenset({"mqtt"})), Candidato("a", frozenset({"mqtt"}))]) == "a")
 
 # --- esito -------------------------------------------------------------------
+# --- 12. la versione del gateway decide cosa la scheda puo' dire -------------
+print("\n12. Confronto fra versioni del gateway")
+
+verifica(
+    "la soglia e' quella da cui 'pending' e' l'ingresso",
+    GATEWAY_INGRESSO == "0.8.59",
+    GATEWAY_INGRESSO,
+)
+for versione, atteso in [
+    ("0.8.59", True),
+    ("0.8.60", True),
+    ("0.9.0", True),
+    ("1.0.0", True),
+    ("0.8.58", False),
+    ("0.8.52", False),
+    ("0.7.1", False),
+    # Il confronto e' per numero e non per testo: «0.8.6» e' PRIMA di «0.8.59»,
+    # mentre in ordine alfabetico verrebbe dopo.
+    ("0.8.6", False),
+    ("0.8.590", True),
+    # Piu' pezzi del necessario: conta cio' che si confronta.
+    ("0.8.59.1", True),
+    # Meno pezzi: non si indovina.
+    ("0.8", False),
+    # Code non numeriche: si leggono le cifre in testa.
+    ("0.8.59-beta", True),
+    ("0.8.58-beta", False),
+    # Tutto cio' che non e' una versione vale «vecchio», che e' il verso prudente.
+    ("", False),
+    ("boh", False),
+    # Il gateway pubblica esattamente questa stringa quando non ha ancora letto
+    # la propria configurazione (V0.8.60, 10 s dopo l'avvio contro 100 ms della
+    # lettura: in pratica non capita, ma se capita dura mezz'ora). Vale
+    # «vecchio», che e' anche la verita': un gateway che non ha letto la
+    # configurazione non sta facendo niente di cio' che la scheda si aspetta.
+    ("sconosciuta", False),
+    ("v0.8.59", False),
+    (None, False),
+    (859, False),
+    (["0.8.59"], False),
+]:
+    verifica(
+        f"{versione!r} >= {GATEWAY_INGRESSO}: {atteso}",
+        almeno_versione(versione, GATEWAY_INGRESSO) is atteso,
+        almeno_versione(versione, GATEWAY_INGRESSO),
+    )
+
 falliti = [e for e in esiti if not e[1]]
 larghezza = max(len(n) for n, _, _ in esiti)
 for nome, ok, dettaglio in esiti:

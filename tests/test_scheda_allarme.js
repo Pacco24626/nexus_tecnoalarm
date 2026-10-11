@@ -27,9 +27,19 @@ class NodoFinto {
     this._testo = "";
     this.hidden = false;
     this.disabled = false;
-    this.className = "";
     const insieme = new Set();
+    // className e classList sono la stessa cosa, come nel DOM vero: senza
+    // questo una classe messa alla creazione non si vedrebbe da classList.
+    Object.defineProperty(this, "className", {
+      get: () => Array.from(insieme).join(" "),
+      set: (valore) => {
+        insieme.clear();
+        String(valore).split(/\s+/).filter(Boolean).forEach((nome) => insieme.add(nome));
+      },
+    });
     this.classList = {
+      add: (...nomi) => nomi.forEach((n) => insieme.add(n)),
+      remove: (...nomi) => nomi.forEach((n) => insieme.delete(n)),
       toggle(nome, forza) {
         const accesa = forza === undefined ? !insieme.has(nome) : Boolean(forza);
         if (accesa) insieme.add(nome); else insieme.delete(nome);
@@ -188,6 +198,11 @@ let zoneSenzaArea = false;
 // Il tastierino automatico: {tastierino_preallarme, dispositivi_preallarme}.
 let tastierinoNellaMappa = {};
 
+// La capacita' del gateway davanti a noi, pubblicata dall'integrazione. Falsa
+// vuol dire gateway precedente alla V0.8.59: li' 'pending' e' il tempo d'USCITA
+// e nessun programma va mai in 'triggered'.
+let ingressoDistinto = true;
+
 function statoMappa(rifiuti = {}) {
   return stato(MAPPA, "5", {
     ruolo: "mappa_allarme",
@@ -210,18 +225,21 @@ function statoMappa(rifiuti = {}) {
     allarme_generale: "binary_sensor.allarme",
     ...(scavalcoNellaMappa ? { consenti_zone_aperte: "switch.consenti" } : {}),
     ...tastierinoNellaMappa,
+    ingresso_distinto: ingressoDistinto,
     rifiuti,
   });
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false, tastierino }) {
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false, tastierino,
+  gatewayVecchio = false }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
   spieNellaMappa = spie || {};
   scavalcoNellaMappa = Boolean(scavalco);
   zoneSenzaArea = Boolean(senzaArea);
   tastierinoNellaMappa = tastierino || {};
+  ingressoDistinto = !gatewayVecchio;
   contesto.localStorage._svuota();
   const chiamate = [];
   const scheda = new Scheda();
@@ -231,7 +249,9 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
       [TOTALE.entity_id]: stato(TOTALE.entity_id, totale),
       [NOTTE.entity_id]: stato(NOTTE.entity_id, notte),
       "binary_sensor.porta": stato("binary_sensor.porta", porta, {
-        device_class: "door", ...(esclusaPorta ? { esclusa: true } : {}),
+        // Come le pubblica il gateway: stringhe, non booleani. Il banco lo
+        // diceva sbagliato e copriva un difetto (10/10/2026).
+        device_class: "door", ...(esclusaPorta ? { esclusa: "ON", allarme: "OFF" } : {}),
       }),
       "binary_sensor.finestra": stato("binary_sensor.finestra", "off", { device_class: "window" }),
       "switch.luce": stato("switch.luce", "off"),
@@ -378,6 +398,23 @@ async function prove() {
     digita(scheda, "9999");
     await disinserisci(scheda, [TOTALE]);
     verifica("rifiuto del gateway: «Codice errato»", messaggio(scheda) === "Codice errato", messaggio(scheda));
+  }
+
+  // 2b. la centrale non ha risposto: il gateway lo dice, e non e' «non eseguito»
+  {
+    // Dalla V0.8.60 il gateway dichiara perso lo scambio dopo 4 secondi. Non
+    // sappiamo se il comando sia arrivato: la frase deve dirlo, e il tono e'
+    // quello dell'attenzione, non quello dell'allarme.
+    const { scheda } = prepara({
+      gateway: ({ rifiuta }) => { rifiuta(1, "nessuna_risposta", 500); },
+    });
+    digita(scheda, "1234");
+    await disinserisci(scheda, [TOTALE]);
+    verifica("il gateway non ha avuto risposta: «Nessuna conferma dalla centrale»",
+      messaggio(scheda) === "Nessuna conferma dalla centrale", messaggio(scheda));
+    verifica("e il tono e' attenzione, non allarme",
+      scheda._el.messaggio.dataset.tono === "attenzione",
+      scheda._el.messaggio.dataset.tono);
   }
 
   // 3. un rifiuto VECCHIO non va scambiato per l'esito di questo tentativo
@@ -588,6 +625,14 @@ async function prove() {
     // Una zona ESCLUSA e chiusa: non impedisce l'inserimento, ma e' proprio
     // quella che vuoi vedere prima di inserire. Prima spariva.
     const { scheda } = prepara({ porta: "off", esclusaPorta: true });
+    verifica("la bandierina arriva come stringa e si accende lo stesso",
+      contesto.bandierineDi({ esclusa: "ON" }).length === 1
+      && contesto.bandierineDi({ esclusa: "OFF" }).length === 0
+      && contesto.bandierineDi({ esclusa: true }).length === 1
+      && contesto.bandierineDi({ esclusa: "off" }).length === 0
+      && contesto.bandierineDi({ esclusa: "qualunque cosa" }).length === 0,
+      JSON.stringify(["ON", "OFF", true, "off", "qualunque cosa"].map(
+        (v) => contesto.bandierineDi({ esclusa: v }).length)));
     const porta = scheda._el.zone.get("binary_sensor.porta").tessera;
     verifica("zona esclusa e chiusa: resta in vista", porta.hidden === false);
     verifica("il conteggio dice che c'e' una segnalazione",
@@ -712,14 +757,104 @@ async function prove() {
       tastiDisinserimento(scheda).join("|"));
   }
 
-  // 13. allarme in corso
+  // 13. allarme in corso e memoria rimasta
   {
-    const { scheda } = prepara({ allarme: "on" });
-    verifica("allarme generale acceso: fascia rossa visibile", scheda._el.banner.hidden === false);
+    // La sirena che suona adesso: il programma e' 'triggered'.
+    const { scheda } = prepara({ allarme: "on", totale: "triggered" });
+    verifica("allarme in corso: fascia rossa, parole da allarme",
+      scheda._el.banner.hidden === false
+      && scheda._el.banner.hasAttribute("data-memoria") === false
+      && scheda._el.bannerTesto.textContent === "Allarme in corso",
+      scheda._el.bannerTesto.textContent);
+  }
+  {
+    // Finito l'allarme il programma torna a riposo, ma il sensore di allarme
+    // generale resta acceso finche' non si azzerano le memorie. Era il difetto
+    // del 10/10/2026: la fascia continuava a dire «in corso» a impianto fermo.
+    const { scheda } = prepara({ allarme: "on", totale: "disarmed" });
+    verifica("allarme finito, memoria rimasta: la fascia cambia parole",
+      scheda._el.banner.hidden === false
+      && scheda._el.banner.hasAttribute("data-memoria") === true
+      && scheda._el.bannerTesto.textContent === "Allarme in memoria",
+      scheda._el.bannerTesto.textContent);
   }
   {
     const { scheda } = prepara({ allarme: "off" });
-    verifica("allarme generale spento: fascia nascosta", scheda._el.banner.hidden === true);
+    verifica("ne' allarme ne' memoria: fascia nascosta", scheda._el.banner.hidden === true);
+  }
+  {
+    // Il secondo allarme del 10/10/2026: il sensore di allarme generale non si
+    // e' acceso per niente, solo la spia delle memorie. Con una sorgente sola
+    // la fascia non sarebbe mai comparsa.
+    const { scheda } = prepara({ allarme: "off", memorie: "on", totale: "disarmed" });
+    verifica("allarme generale muto ma memorie accese: la fascia c'e' lo stesso",
+      scheda._el.banner.hidden === false
+      && scheda._el.banner.hasAttribute("data-memoria") === true
+      // Le memorie coprono anche rete e batteria: da sole non dicono «allarme».
+      && scheda._el.bannerTesto.textContent === "Memoria da azzerare",
+      scheda._el.bannerTesto.textContent);
+  }
+  {
+    const { scheda } = prepara({ allarme: "off", memorie: "off" });
+    verifica("memorie azzerate: la fascia sparisce", scheda._el.banner.hidden === true);
+  }
+  {
+    // Subito dopo un allarme sono accesi tutti e due, e il generale si spegne
+    // qualche secondo dopo. Senza precedenza alle memorie la fascia direbbe
+    // «Allarme in memoria» per quei secondi e poi cambierebbe di nuovo.
+    const { scheda } = prepara({ allarme: "on", memorie: "on", totale: "disarmed" });
+    verifica("generale e memorie insieme: comandano le memorie, niente sfarfallio",
+      scheda._el.bannerTesto.textContent === "Memoria da azzerare",
+      scheda._el.bannerTesto.textContent);
+  }
+  {
+    // La sirena prima che la memoria si accenda: comanda il programma.
+    const { scheda } = prepara({ allarme: "off", totale: "triggered" });
+    verifica("programma in allarme senza memoria: resta un allarme in corso",
+      scheda._el.banner.hidden === false
+      && scheda._el.banner.hasAttribute("data-memoria") === false
+      && scheda._el.bannerTesto.textContent === "Allarme in corso");
+  }
+
+  // 13b. gateway vecchio: la scheda non deve raccontare bugie
+  {
+    // Fino alla V0.8.58 'pending' e' il tempo d'USCITA. Dirgli «Ingresso in
+    // corso» sarebbe l'opposto della verita' proprio mentre esci di casa.
+    const { scheda } = prepara({ totale: "pending", gatewayVecchio: true });
+    verifica("gateway vecchio: 'pending' e' l'uscita, non l'ingresso",
+      scheda._el.programmi.get(TOTALE.entity_id).stato.textContent === "In inserimento…",
+      scheda._el.programmi.get(TOTALE.entity_id).stato.textContent);
+  }
+  {
+    const { scheda } = prepara({ totale: "pending" });
+    verifica("CONTROPROVA gateway nuovo: 'pending' e' l'ingresso",
+      scheda._el.programmi.get(TOTALE.entity_id).stato.textContent === "Ingresso in corso",
+      scheda._el.programmi.get(TOTALE.entity_id).stato.textContent);
+  }
+  {
+    // Prima della V0.8.59 nessun programma va in 'triggered': l'allarme in corso
+    // si legge solo dal sensore generale, com'era prima. Senza questo ripiego la
+    // fascia direbbe «memoria» mentre la sirena suona.
+    const { scheda } = prepara({ allarme: "on", memorie: "on", totale: "armed_away",
+      gatewayVecchio: true });
+    verifica("gateway vecchio: l'allarme in corso si legge dal generale",
+      scheda._el.banner.hidden === false
+      && scheda._el.bannerTesto.textContent === "Allarme in corso",
+      scheda._el.bannerTesto.textContent);
+  }
+  {
+    // La riga del tastierino automatico non si offre dove non puo' funzionare:
+    // su un gateway vecchio si aprirebbe a ogni inserimento.
+    const { scheda } = prepara({ gatewayVecchio: true,
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] } });
+    verifica("gateway vecchio: la riga del tastierino automatico non compare",
+      scheda._el.dispositivo.sezione.hidden === true);
+  }
+  {
+    const { scheda } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] } });
+    verifica("CONTROPROVA gateway nuovo: la riga c'e'",
+      scheda._el.dispositivo.sezione.hidden === false);
   }
 
   // 14. registro eventi
@@ -1392,6 +1527,58 @@ async function prove() {
     const testo = scheda._radice.textContent;
     verifica("centrale non pubblicata: avviso che spiega cosa controllare",
       testo.includes("Nessuna centrale Tecnoalarm"), testo.slice(0, 80));
+  }
+
+  // 20. la mappa che sparisce: un minuto di assenza non e' un guasto
+  {
+    // Una discovery ripubblicata distrugge e ricrea le entita': 55 secondi
+    // misurati sul campo. Prima la scheda si cancellava e diventava un riquadro
+    // rosso, che su un tablet a muro si legge «l'antifurto e' giu'».
+    const { scheda, casa, pubblica } = prepara({});
+    const programmiPrima = scheda._el.programmi.size;
+    delete casa.stati[MAPPA];
+    pubblica();
+    verifica("mappa sparita: la scheda resta in piedi",
+      scheda._el !== null && scheda._el.programmi.size === programmiPrima,
+      String(scheda._el && scheda._el.programmi.size));
+    // Con il comportamento vecchio `_el` qui e' null: si riporta invece di
+    // morire, o le prove dopo questa non verrebbero nemmeno eseguite.
+    verifica("mappa sparita: lo dice con una riga d'attesa, non col rosso",
+      Boolean(scheda._el) && scheda._el.attesa.hidden === false
+      && scheda._el.attesa.textContent.includes("In attesa dei dati")
+      && scheda._el.card.hasAttribute("data-attesa"),
+      scheda._el ? scheda._el.attesa.textContent : "scheda cancellata");
+
+    // Torna prima della scadenza: si riprende senza che sia successo niente.
+    casa.stati[MAPPA] = statoMappa();
+    pubblica();
+    verifica("mappa tornata: via la riga d'attesa",
+      scheda._el.attesa.hidden === true
+      && scheda._el.card.hasAttribute("data-attesa") === false);
+    await avanza(120000);
+    verifica("e l'avviso non arriva piu', perche' l'attesa e' stata annullata",
+      scheda._el !== null);
+  }
+  {
+    // Se invece non torna, dopo novanta secondi va detto.
+    const { scheda, casa, pubblica } = prepara({});
+    delete casa.stati[MAPPA];
+    pubblica();
+    await avanza(89000);
+    verifica("a 89 secondi si aspetta ancora", scheda._el !== null);
+    await avanza(2000);
+    verifica("dopo i novanta secondi arriva l'avviso",
+      scheda._el === null && scheda._radice.textContent.includes("non trovata"),
+      scheda._radice.textContent.slice(0, 60));
+  }
+  {
+    // Mai vista: e' un'entita' sbagliata nello YAML, e chi la sta scrivendo
+    // deve vederlo subito, non dopo un minuto e mezzo.
+    const { scheda } = prepara({ config: { entity: "sensor.non_esiste_proprio" } });
+    verifica("entita' mai vista: avviso subito, senza aspettare",
+      scheda._el === null
+      && scheda._radice.textContent.includes("sensor.non_esiste_proprio"),
+      scheda._radice.textContent.slice(0, 70));
   }
 }
 

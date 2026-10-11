@@ -25,6 +25,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+# La versione del gateway da cui `pending` vuol dire INGRESSO e i programmi
+# pubblicano `triggered`. Prima di questa `pending` era il tempo d'USCITA: una
+# scheda che non lo sapesse scriverebbe «Ingresso in corso» mentre esci di casa,
+# aprirebbe il tastierino automatico a ogni inserimento, e durante un allarme
+# vero non troverebbe nessun programma in allarme.
+GATEWAY_INGRESSO = "0.8.59"
+
 ID_ALLARME_GENERALE = "tec_gen_alarm_v30"
 ID_AZZERA_MEMORIE = "tec_azzera_memorie"
 ID_MEMORIE = "tec_memorie"
@@ -227,6 +234,40 @@ def con_rifiuto(
     «Disinserimento in corso…» (2.2.0, trovato sul campo l'11/09/2026).
     """
     return {**rifiuti, str(numero): dict(rifiuto)}
+
+
+def _numero_iniziale(testo: str) -> int | None:
+    """Le cifre in testa a un pezzo di versione: «59» e «59-beta» -> 59."""
+    cifre = ""
+    for carattere in testo.strip():
+        if not carattere.isdigit():
+            break
+        cifre += carattere
+    return int(cifre) if cifre else None
+
+
+def almeno_versione(versione: object, minima: str) -> bool:
+    """La versione del gateway e' almeno `minima`?
+
+    Assente, vuota o illeggibile vale **no**, ed e' il verso prudente: una
+    funzione nuova si accende solo quando si sa di poterla accendere, mentre
+    accenderla per sbaglio su un gateway vecchio racconta bugie nel momento
+    peggiore - durante un'uscita o durante un allarme.
+    """
+    if not isinstance(versione, str):
+        return False
+    pezzi = versione.strip().split(".")
+    soglia = minima.split(".")
+    if len(pezzi) < len(soglia):
+        return False
+    for grezzo, atteso in zip(pezzi, soglia):
+        numero = _numero_iniziale(grezzo)
+        if numero is None:
+            return False
+        riferimento = int(atteso)
+        if numero != riferimento:
+            return numero > riferimento
+    return True
 
 
 def pulisci_rifiuto(dati: Any) -> dict[str, Any] | None:

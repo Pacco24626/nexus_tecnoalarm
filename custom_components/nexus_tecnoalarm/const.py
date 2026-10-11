@@ -8,7 +8,7 @@ DOMAIN = "nexus_tecnoalarm"
 MANUFACTURER = "Nexus-T"
 MODEL = "Tastiera Tecnoalarm"
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.SWITCH]
 
 # --- Servizi ------------------------------------------------------------------
 SERVICE_SEND_KEY = "send_key"
@@ -92,11 +92,15 @@ LEGACY_SENSOR_UNIQUE_ID = "nexus_tecnoalarm_kpad_01"
 LEGACY_SENSOR_NAME = "Nexus Tecnoalarm Keypad"
 
 KEY_CONNECTION = "connection"
+KEY_TASTIERA = "tastiera_remota"
 
 # --- Frontend -----------------------------------------------------------------
 CARD_URL_BASE = "/nexus_tecnoalarm_local"
 CARD_FILENAME = "nexus-tecnoalarm-card.js"
 CARD_ALLARME_FILENAME = "nexus-tecnoalarm-allarme.js"
+# Il guardiano del preallarme: non e' una card e non va fra le risorse Lovelace.
+# Lo carica il frontend su ogni pagina, vedi `add_extra_js_url` in __init__.py.
+GUARDIANO_FILENAME = "nexus-tecnoalarm-guardiano.js"
 # Le card servite dall'integrazione, ognuna registrata come risorsa a se'.
 CARD_FILES = (CARD_FILENAME, CARD_ALLARME_FILENAME)
 
@@ -105,6 +109,9 @@ CARD_FILES = (CARD_FILENAME, CARD_ALLARME_FILENAME)
 # entita' dell'antifurto. L'identificativo e' cablato nel flow ed e' lo stesso
 # su ogni gateway: vale finche' c'e' un gateway solo per Home Assistant.
 IDENTIFICATIVO_CENTRALE = ("mqtt", "tecnoalarm_gateway")
+# Il dispositivo del gateway stesso: e' l'unico che porta `sw_version`, e quella
+# versione decide che cosa la scheda puo' dire senza mentire.
+IDENTIFICATIVO_GATEWAY = ("mqtt", "nexus_t_gateway")
 NOME_DISPOSITIVO_CENTRALE = "Centrale Tecnoalarm"
 TOPIC_RIFIUTO = "tecnoalarm/programma/+/rifiuto"
 

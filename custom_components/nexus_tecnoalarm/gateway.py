@@ -135,6 +135,9 @@ class KeypadGateway:
         self.presence_window: int = int(cfg.get(CONF_PRESENCE_WINDOW, DEFAULT_PRESENCE_WINDOW))
         self.ping_interval: int = int(cfg.get(CONF_PING_INTERVAL, DEFAULT_PING_INTERVAL))
         self.on_demand: bool = cfg.get(CONF_ON_DEMAND, DEFAULT_ON_DEMAND)
+        # La tastiera remota si puo' spegnere dalla sua entita'. Acceso e'
+        # com'era prima: chi aggiorna non deve trovarsela spenta.
+        self.accesa: bool = True
         self.max_backoff: int = int(cfg.get(CONF_MAX_BACKOFF, DEFAULT_MAX_BACKOFF))
 
         self.connected: bool = False

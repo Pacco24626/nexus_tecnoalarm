@@ -20,7 +20,11 @@ Dalla **2.0.0** si configura interamente dall'interfaccia e la card è inclusa: 
 
 Una sola installazione: la card viene servita e registrata dall'integrazione stessa.
 
-Requisiti: Home Assistant 2024.12 o superiore, gateway Nexus-T V0.7.1 o superiore.
+Requisiti: Home Assistant 2024.12 o superiore. Il gateway Nexus-T basta dalla
+**V0.7.1** per la tastiera; per la scheda allarme completa serve la **V0.8.59**. Con un
+gateway più vecchio non si rompe niente: la scheda legge la versione e rinuncia da sola
+a ciò che quel gateway non sa fare — vedi *[La versione del gateway, e che cosa
+cambia](#la-versione-del-gateway-e-che-cosa-cambia)*.
 
 ## Configurazione
 
@@ -112,6 +116,44 @@ Dalla 2.1.0 la card e' ridisegnata sulla F127EVLCD:
 
 Tutto segue il tema di Home Assistant, chiaro e scuro, e le misure scalano sulla
 larghezza della card: in una sezione stretta resta leggibile.
+
+### Spegnere la tastiera remota
+
+Con la scheda allarme che fa quasi tutto, la tastiera serve per la manutenzione o per il
+giorno in cui la scheda non basta. L'entità **Tastiera remota** la spegne:
+
+- **spenta** → il collegamento verso il gateway si chiude davvero, non è un filtro sopra
+  qualcosa che continua a girare. L'entità del display diventa non disponibile, e un
+  tasto inviato in quel momento viene rifiutato dicendo il motivo: *«Tastiera remota
+  spenta»*, che è una cosa diversa da *«Tastiera non connessa»*;
+- **accesa** → tutto come prima.
+
+Lo stato sopravvive ai riavvii, e chi aggiorna da una versione precedente la trova
+accesa: nessuno deve ritrovarsi una funzione spenta senza averlo chiesto.
+
+Per farla sparire anche dalla plancia quando è spenta, una *conditional card*:
+
+```yaml
+type: conditional
+conditions:
+  - condition: state
+    entity: switch.salotto_tecnoalarm_tastiera_remota   # vedi nota qui sotto
+    state: "on"
+card:
+  type: custom:nexus-tecnoalarm-card
+  entity: sensor.nexus_tecnoalarm_keypad
+```
+
+L'identificativo dell'interruttore **non è uguale su tutti gli impianti**: porta il nome
+del dispositivo e l'area in cui l'hai messo. Cercalo come *Tastiera remota* nel selettore
+delle entità invece di copiarlo da qui.
+
+**Una cosa da sapere, perché cambia a che cosa serve l'interruttore.** Il battito che
+tiene agganciata la tastiera alla centrale parte **già** solo quando una card è in vista
+— è l'opzione *Aggancia la tastiera solo quando la card è in vista*, accesa di fabbrica,
+con una finestra di 15 secondi. Quindi il polling della centrale è già libero quando
+nessuno guarda. L'interruttore serve a un'altra cosa: chiudere il collegamento e togliere
+di mezzo la tastiera quando non serve.
 
 ## Scheda allarme
 
@@ -342,6 +384,75 @@ comandi riusciti, e un successo sovrascrive il rifiuto precedente con un esito c
 chiave `zone_aperte` non ce l'ha. L'elenco si legge dal **sensore «zone aperte» del
 programma**, che è la sua sede.
 
+### La fascia in cima
+
+Una fascia sola, per tre cose diverse:
+
+| quando | dice | com'è |
+|---|---|---|
+| un programma è `triggered` | **Allarme in corso** | rossa piena, lampeggia |
+| l'allarme generale è acceso ma nessun programma è in allarme | **Allarme in memoria** | solo contorno, ferma |
+| è accesa la sola spia delle memorie | **Memoria da azzerare** | solo contorno, ferma |
+
+Quando sono accese tutte e due, **comandano le memorie**. Serve a non cambiare parole
+due volte in sei secondi: finito un allarme il sensore generale si spegne con qualche
+secondo di ritardo, e senza questa precedenza la fascia passerebbe per «Allarme in
+memoria» giusto il tempo di leggerlo.
+
+**La spia delle memorie non parla solo di allarmi**: copre anche rete KO, batteria KO e
+manomissioni. Da sola dice *Memoria da azzerare* e non *allarme*, perché sarebbe falso
+metà delle volte.
+
+Durante l'**ingresso** la fascia resta spenta: pulsa la riga del programma, che prende i
+colori dell'allarme. Riga rossa senza fascia vuol dire «stai entrando»; riga rossa con
+fascia vuol dire «la sirena sta suonando».
+
+### La versione del gateway, e che cosa cambia
+
+La scheda **sa con quale gateway sta parlando**. L'integrazione legge `sw_version` dal
+dispositivo *Nexus-T Gateway* — l'unico che la pubblica — e la passa alla scheda insieme
+alla mappa, perché una card gira coi permessi di chi la guarda e il registro dei
+dispositivi non lo vede.
+
+Serve perché gli aggiornamenti non viaggiano insieme: l'integrazione la aggiorna HACS,
+che mostra il bollino a chiunque, mentre il gateway lo aggiorna l'installatore. Senza
+questo controllo un impianto potrebbe ritrovarsi la scheda nuova su un gateway vecchio,
+e sentirsi raccontare cose false proprio nei momenti che contano.
+
+| con gateway | la scheda |
+|---|---|
+| **V0.8.59 e successivi** | tutto: ingresso distinto dall'uscita, allarme in corso letto dal programma, tastierino automatico disponibile |
+| **precedenti** | `pending` resta *In inserimento…*, perché lì è il tempo d'**uscita**; l'allarme in corso torna a leggersi dal sensore generale; la riga del *tastierino automatico* **non compare**, perché si aprirebbe a ogni inserimento |
+
+Versione assente o illeggibile vale **vecchio**: una funzione nuova si accende solo
+quando si sa di poterla accendere.
+
+L'ordine consigliato resta **prima il gateway, poi l'integrazione**, ma non è più
+obbligatorio: invertirlo non produce messaggi sbagliati, solo funzioni che aspettano.
+
+### Quando i dati non arrivano
+
+L'entità della mappa può sparire da Home Assistant **senza che sia rotto niente**: il
+gateway che ripubblica la propria configurazione distrugge e ricrea le entità — 55
+secondi, misurati sul campo — un riavvio del broker MQTT fa lo stesso, e dopo un riavvio
+di Home Assistant le entità si ripopolano piano.
+
+La scheda distingue i due casi, perché sono due cose diverse:
+
+- **entità mai trovata** → avviso subito. È un `entity:` sbagliato nella configurazione
+  della scheda, e chi la sta scrivendo deve vederlo mentre la scrive;
+- **entità già disegnata e poi sparita** → la scheda **resta**, con l'ultima lettura
+  smorzata e una riga *In attesa dei dati dell'impianto*. Solo dopo **90 secondi** passa
+  all'avviso.
+
+Il motivo è semplice: su un tablet a muro un riquadro rosso al posto della scheda
+dell'antifurto si legge «l'impianto è giù», ed è il messaggio peggiore possibile proprio
+lì. Lo smorzato dice l'altra cosa vera, cioè che quello che si vede è l'ultima lettura e
+non lo stato di adesso.
+
+Una singola entità che manca — una zona, un programma — non fa niente di tutto questo:
+la sua tessera dice *Non disponibile* e il resto della scheda continua a funzionare.
+
 ### Gli stati del programma
 
 | stato | che cosa vuol dire |
@@ -363,10 +474,12 @@ disinserito» proprio mentre qualcuno sta entrando in casa con l'impianto acceso
 `armed_away`, `armed_home`, `pending` o `triggered`.
 
 Nella scheda l'ingresso in corso prende i colori dell'allarme e pulsa — hai una
-ventina di secondi, e una riga discreta non si guarda — ma la fascia rossa in cima
-**non** si accende: quella nasce dal sensore generale della centrale, che in
-preallarme resta spento. Riga rossa senza fascia significa «stai entrando»; riga
-rossa con fascia significa «la sirena sta suonando».
+ventina di secondi, e una riga discreta non si guarda — mentre la fascia in cima resta
+spenta: vedi *[La fascia in cima](#la-fascia-in-cima)*.
+
+Con un gateway precedente alla V0.8.59 la scheda **non** scrive «Ingresso in corso» su
+`pending`, perché lì quello stato è il tempo d'uscita: lo riconosce dalla versione del
+gateway e lascia *In inserimento…*.
 
 ### Il tastierino che si apre da solo
 
@@ -396,10 +509,22 @@ mesi; e dalle opzioni si può solo revocare, perché abilitare richiede di esser
 
 **Perché funziona da qualunque pagina.** Una scheda Lovelace esiste solo mentre la
 sua vista è a schermo: se il tablet sta mostrando un'altra plancia, non c'è nessuno
-che possa aprire niente. Le risorse Lovelace però vengono caricate su **ogni** pagina
-— è così che i tipi di card si registrano — quindi il pezzo che sorveglia il
-preallarme gira sempre, anche dove la scheda non c'è. Su un dispositivo non abilitato
-non fa assolutamente nulla.
+che possa aprire niente. Il pezzo che sorveglia il preallarme sta quindi fuori dalla
+scheda, e l'integrazione lo fa caricare da Home Assistant come modulo del frontend:
+così è presente su **ogni** pagina, comprese quelle che plance non sono — il pannello
+*home* della 2026.10, le impostazioni, la cronologia. Le sole risorse Lovelace non
+basterebbero, perché le carica il pannello Lovelace: un tablet lasciato sulla pagina
+iniziale resterebbe scoperto. Su un dispositivo non abilitato non fa assolutamente
+nulla.
+
+**Dopo un aggiornamento, ogni dispositivo va ricaricato una volta.** Il modulo entra
+nella pagina dall'indice del frontend, e su un indirizzo `https` — l'accesso da fuori
+casa, o l'app companion — quell'indice lo tiene in cache il *service worker* di Home
+Assistant. Alla prima apertura dopo l'aggiornamento il dispositivo usa ancora il guscio
+vecchio, che il modulo non ce l'ha; alla seconda è a posto. Sulle plance Lovelace la
+scheda si aggiorna subito lo stesso, perché l'indirizzo della risorsa porta la versione:
+è solo *fuori* dalle plance che serve il giro in più. Nell'app companion basta chiuderla
+dal selettore e riaprirla, oppure *Impostazioni → App companion → Ricarica frontend*.
 
 Due limiti da conoscere:
 
@@ -478,8 +603,10 @@ trenta secondi. Si passa al servizio `alarm_control_panel.alarm_disarm`:
 - con i gateway **precedenti** lo verifica ancora Home Assistant, e la scheda mostra
   lo stesso «Codice errato».
 
-L'allarme in corso non si legge dai programmi, che non pubblicano mai `triggered`: la
-fascia rossa in cima segue il sensore *Allarme Generale Centrale*.
+L'allarme in corso si legge dal programma che va in `triggered`, che il gateway
+pubblica dalla **V0.8.59**; con un gateway precedente la scheda ripiega sul sensore
+*Allarme Generale Centrale*, che è quanto c'era prima. Vedi *[La fascia in
+cima](#la-fascia-in-cima)*.
 
 ### Requisiti e limiti
 

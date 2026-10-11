@@ -27,6 +27,7 @@ from homeassistant.helpers import floor_registry as fr
 from .const import (
     EVENTO_RIFIUTO,
     IDENTIFICATIVO_CENTRALE,
+    IDENTIFICATIVO_GATEWAY,
     NOME_DISPOSITIVO_CENTRALE,
     TOPIC_RIFIUTO,
 )
@@ -158,6 +159,22 @@ class MappaAllarme:
         ]
         scelto = scegli_centrale(candidati)
         return next((d for d in trovati if d.id == scelto), None)
+
+    @property
+    def versione_gateway(self) -> str | None:
+        """La versione del gateway, letta dal dispositivo che lui stesso pubblica.
+
+        La scheda da sola non potrebbe averla: il registro dei dispositivi e'
+        roba da amministratori, mentre una card gira coi permessi di chi la
+        guarda - lo stesso motivo per cui esiste questo sensore mappa.
+        """
+        registro = dr.async_get(self.hass)
+        cerca = getattr(registro, "async_get_devices", None)
+        if cerca is None:
+            dispositivo = registro.async_get_device(identifiers={IDENTIFICATIVO_GATEWAY})
+        else:
+            dispositivo = next(iter(cerca(identifiers={IDENTIFICATIVO_GATEWAY})), None)
+        return getattr(dispositivo, "sw_version", None)
 
     def _ricostruisci(self) -> bool:
         """Rilegge il dispositivo della centrale. True se la mappa e' cambiata."""
