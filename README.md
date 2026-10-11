@@ -526,6 +526,33 @@ scheda si aggiorna subito lo stesso, perché l'indirizzo della risorsa porta la 
 è solo *fuori* dalle plance che serve il giro in più. Nell'app companion basta chiuderla
 dal selettore e riaprirla, oppure *Impostazioni → App companion → Ricarica frontend*.
 
+**L'abilitazione è legata all'indirizzo con cui si apre Home Assistant**, non al
+dispositivo in quanto tale. L'identificativo lo conserva il browser, che tiene memorie
+separate per ogni indirizzo: `https://<id>.ui.nabu.casa` e `http://homeassistant.local:8123`
+sono due indirizzi distinti anche se portano allo stesso impianto, e lo stesso vale fra
+un nome e un indirizzo IP, o fra `http` e `https`. Un dispositivo abilitato da fuori casa
+risulta quindi **non abilitato** quando l'app passa all'indirizzo interno, e viceversa.
+
+Non è una limitazione aggirabile: la separazione fra indirizzi è una protezione del
+browser. Si governa in configurazione.
+
+- **L'app companion commuta da sola** fra indirizzo interno ed esterno a seconda della
+  rete, e il rientro in casa — cioè il momento in cui il tastierino serve — è
+  esattamente il momento in cui commuta. Il tastierino va quindi abilitato **una volta
+  per ciascun indirizzo**. Dopo, le commutazioni sono trasparenti: nell'elenco delle
+  opzioni compaiono due voci per lo stesso dispositivo, distinguibili dalle ultime
+  quattro cifre dell'identificativo.
+- **In alternativa**, impostare nell'app un indirizzo unico — di norma quello esterno,
+  usato anche in casa — elimina la commutazione e lascia una registrazione sola. Il
+  prezzo è il traffico che esce e rientra anche quando si è in rete locale.
+- **L'indirizzo interno va scritto come nome**, non come indirizzo IP. Con un IP, un
+  cambio di indirizzo di Home Assistant equivale a un indirizzo nuovo: l'abilitazione va
+  rifatta e nell'elenco resta una voce che non corrisponde più a niente. Una prenotazione
+  DHCP per Home Assistant è comunque consigliata, perché l'IP fisso serve anche ad altro.
+
+Revocando una voce dalle opzioni si revoca **quell'indirizzo**: per togliere un
+dispositivo del tutto vanno revocate tutte le sue voci.
+
 Due limiti da conoscere:
 
 - **a schermo spento la pagina è congelata** e nessuno può anticipare il risveglio.
