@@ -142,7 +142,12 @@ def _schema_tastierino(defaults: dict[str, Any]) -> vol.Schema:
                 multiple=True,
                 mode=selector.SelectSelectorMode.LIST,
                 options=[
-                    selector.SelectOptionDict(value=voce["id"], label=voce["nome"])
+                    # Il nome lo sceglie chi abilita, e due browser dello stesso
+                    # telefono finiscono per chiamarsi uguale: senza le ultime
+                    # cifre dell'identificativo non si saprebbe quale si revoca.
+                    selector.SelectOptionDict(
+                        value=voce["id"], label=f"{voce['nome']} · {voce['id'][-4:]}"
+                    )
                     for voce in elenco
                 ],
             )

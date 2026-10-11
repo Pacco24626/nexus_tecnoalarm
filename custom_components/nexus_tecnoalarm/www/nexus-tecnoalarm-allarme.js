@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.8.0";
+const VERSIONE_SCHEDA = "2.8.1";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1370,13 +1370,21 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     }
     voce.sezione.hidden = false;
 
+    // Tre stati, non due. «Non abilitato» copriva due situazioni diverse:
+    // non essere mai stati abilitati qui, e avere un'identita' che il server non
+    // riconosce piu' - revocata dalle opzioni, oppure registrata da un altro
+    // browser dello stesso dispositivo, perche' l'identita' e' del browser.
+    // Dirle con la stessa frase le fa sembrare un guasto.
     const identita = identitaDispositivo();
     const attivo = abilitatoQui(mappa);
     voce.riga.toggleAttribute("data-attivo", attivo);
     voce.bottone.textContent = attivo ? "Disabilita" : "Abilita";
+    const nome = identita ? identita.nome : "";
     voce.stato.textContent = attivo
-      ? `Abilitato su questo dispositivo come \u00ab${identita ? identita.nome : ""}\u00bb.`
-      : "Non abilitato su questo dispositivo.";
+      ? `Abilitato su questo dispositivo come \u00ab${nome}\u00bb.`
+      : identita
+        ? `Registrato come \u00ab${nome}\u00bb, ma non piu' fra i dispositivi abilitati.`
+        : "Non abilitato su questo dispositivo.";
   }
 
   /** Accende o spegne il tastierino automatico su QUESTO dispositivo. */

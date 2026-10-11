@@ -1470,6 +1470,22 @@ async function prove() {
     scheda._aggiorna();
     verifica("identita' locale ma non nell'elenco: non e' abilitato",
       scheda._el.dispositivo.bottone.textContent === "Abilita");
+    // E lo dice in modo diverso da «qui non sei mai stato abilitato»: e' la
+    // frase che la sera dell'11/10/2026 avrebbe spiegato subito cos'era
+    // successo, invece di far sembrare che si fosse spento da solo.
+    verifica("e lo dice: registrato, ma non piu' fra gli abilitati",
+      scheda._el.dispositivo.stato.textContent
+        === "Registrato come «Tablet ingresso», ma non piu' fra i dispositivi abilitati.",
+      scheda._el.dispositivo.stato.textContent);
+  }
+  {
+    // Nessuna identita' in memoria: la frase e' l'altra.
+    const { scheda } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] },
+    });
+    verifica("CONTROPROVA senza identita': la frase e' quella di sempre",
+      scheda._el.dispositivo.stato.textContent === "Non abilitato su questo dispositivo.",
+      scheda._el.dispositivo.stato.textContent);
   }
   {
     // Si spegne: anche qui prima la domanda.
