@@ -198,6 +198,10 @@ let zoneSenzaArea = false;
 // Il tastierino automatico: {tastierino_preallarme, dispositivi_preallarme}.
 let tastierinoNellaMappa = {};
 
+// L'interruttore della tastiera remota, se l'integrazione lo pubblica: null
+// e' un'integrazione precedente alla 2.9.0, dove la riga non deve comparire.
+let interruttoreNellaMappa = null;
+
 // La capacita' del gateway davanti a noi, pubblicata dall'integrazione. Falsa
 // vuol dire gateway precedente alla V0.8.59: li' 'pending' e' il tempo d'USCITA
 // e nessun programma va mai in 'triggered'.
@@ -225,13 +229,14 @@ function statoMappa(rifiuti = {}) {
     allarme_generale: "binary_sensor.allarme",
     ...(scavalcoNellaMappa ? { consenti_zone_aperte: "switch.consenti" } : {}),
     ...tastierinoNellaMappa,
+    ...(interruttoreNellaMappa ? { interruttore_tastiera: interruttoreNellaMappa } : {}),
     ingresso_distinto: ingressoDistinto,
     rifiuti,
   });
 }
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
-function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false, tastierino,
+function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false, tastierino, tastiera,
   gatewayVecchio = false }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
@@ -239,6 +244,7 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
   scavalcoNellaMappa = Boolean(scavalco);
   zoneSenzaArea = Boolean(senzaArea);
   tastierinoNellaMappa = tastierino || {};
+  interruttoreNellaMappa = tastiera ? "switch.tecnoalarm_tastiera_remota" : null;
   ingressoDistinto = !gatewayVecchio;
   contesto.localStorage._svuota();
   const chiamate = [];
@@ -265,6 +271,10 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
   }
 
   if (scavalcoNellaMappa) casa.stati["switch.consenti"] = stato("switch.consenti", "off");
+
+  if (interruttoreNellaMappa) {
+    casa.stati[interruttoreNellaMappa] = stato(interruttoreNellaMappa, tastiera);
+  }
 
   for (const [numero, spia] of Object.entries(spieNellaMappa)) {
     const id = `binary_sensor.zoneap_${numero}`;
@@ -1595,6 +1605,53 @@ async function prove() {
       scheda._el === null
       && scheda._radice.textContent.includes("sensor.non_esiste_proprio"),
       scheda._radice.textContent.slice(0, 70));
+  }
+  {
+    // 20. la riga della tastiera remota.
+    // Integrazione precedente alla 2.9.0: la mappa non dice qual e'
+    // l'interruttore, e la riga non esiste. Nessun pulsante che comanda
+    // un'entita' indovinata.
+    const { scheda } = prepara({});
+    verifica("mappa senza interruttore: nessuna riga della tastiera",
+      scheda._el.tastiera.sezione.hidden === true);
+  }
+  {
+    // Accesa: il pulsante la spegne, e la riga e' marcata attiva.
+    const { scheda } = prepara({ tastiera: "on" });
+    const t = scheda._el.tastiera;
+    verifica("tastiera accesa: la riga c'e' e il pulsante dice Spegni",
+      t.sezione.hidden === false && t.bottone.textContent === "Spegni"
+      && t.riga.hasAttribute("data-attivo")
+      && /Accesa/.test(t.stato.textContent), t.stato.textContent);
+  }
+  {
+    // Il pulsante commuta l'interruttore vero, con l'entita' che dice la mappa.
+    const { scheda, chiamate } = prepara({ tastiera: "on" });
+    scheda._el.tastiera.bottone.click();
+    await svuota();
+    verifica("il pulsante commuta l'interruttore della mappa",
+      chiamate.length === 1 && chiamate[0].dominio === "switch"
+      && chiamate[0].servizio === "toggle"
+      && chiamate[0].dati.entity_id === "switch.tecnoalarm_tastiera_remota",
+      JSON.stringify(chiamate[0] || null));
+  }
+  {
+    // Spenta: il pulsante la riaccende. E' l'unica strada di ritorno per chi
+    // ha nascosto la card della tastiera quando l'interruttore e' spento.
+    const { scheda } = prepara({ tastiera: "off" });
+    const t = scheda._el.tastiera;
+    verifica("tastiera spenta: il pulsante dice Accendi e la riga non e' attiva",
+      t.bottone.textContent === "Accendi" && t.riga.hasAttribute("data-attivo") === false
+      && /Spenta/.test(t.stato.textContent), t.stato.textContent);
+  }
+  {
+    // Non disponibile non e' spenta: mentre l'integrazione si ricarica il
+    // pulsante non deve fingere di sapere da che parte sta l'interruttore.
+    const { scheda } = prepara({ tastiera: "unavailable" });
+    const t = scheda._el.tastiera;
+    verifica("interruttore non disponibile: pulsante spento e lo dice",
+      t.sezione.hidden === false && t.bottone.disabled === true
+      && /non disponibile/.test(t.stato.textContent), t.stato.textContent);
   }
 }
 

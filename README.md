@@ -131,13 +131,50 @@ giorno in cui la scheda non basta. L'entità **Tastiera remota** la spegne:
 Lo stato sopravvive ai riavvii, e chi aggiorna da una versione precedente la trova
 accesa: nessuno deve ritrovarsi una funzione spenta senza averlo chiesto.
 
-Per farla sparire anche dalla plancia quando è spenta, una *conditional card*:
+**Dove si accende e si spegne.** Dalla 2.9.0 la [scheda allarme](#scheda-allarme) porta in
+fondo la riga *Tastiera remota*, con il pulsante **Accendi** / **Spegni**, accanto a quella
+del tastierino automatico: non serve mettere l'interruttore sulla plancia a mano, e non
+serve andarlo a cercare nella pagina del dispositivo. La riga compare solo se
+l'integrazione pubblica quale entità è l'interruttore, quindi su una versione precedente
+non c'è affatto, invece di offrire un pulsante che comanda un'entità indovinata.
+
+### Far sparire la card quando la tastiera è spenta
+
+Spenta, la card della tastiera non può fare niente: lasciarla sulla plancia a dire
+*TASTIERA NON CONNESSA* fa sembrare un guasto quella che è una scelta.
+
+Dalla 2.9.0 **non c'è niente da fare**: quando si aggiunge la card dal catalogo, nasce già
+con la condizione impostata sull'interruttore di quell'impianto. La trovi nella scheda
+*Visibilità* dell'editor della card, e la togli da lì se non la vuoi.
+
+Per una card già sulla plancia, o per nascondere anche il titolo della sezione, la
+condizione si aggiunge a mano — *Modifica* → la sezione o la card → *Visibilità* → *Stato
+entità* → l'interruttore → *Acceso*. In YAML:
+
+```yaml
+type: custom:nexus-tecnoalarm-card
+entity: sensor.nexus_tecnoalarm_keypad
+visibility:
+  - condition: state
+    entity_id: switch.salotto_tecnoalarm_tastiera_remota   # vedi nota qui sotto
+    state: "on"
+```
+
+Messa sulla **sezione** invece che sulla card, se ne va anche l'intestazione: una sezione
+intitolata *Tastiera* con sotto il vuoto è peggio di niente.
+
+**Una differenza misurata, se ti interessa il dettaglio.** Con `visibility` la card sparisce
+dalla vista ma resta viva dietro le quinte, e continua a mandare il suo battito di presenza
+ogni cinque secondi; con una *conditional card* viene tolta di mezzo davvero. A tastiera
+spenta non cambia niente — il collegamento al gateway è chiuso e quel battito non aggancia
+nulla — quindi `visibility` va benissimo ed è più semplice. La `conditional` serve se vuoi
+che la card non esista proprio:
 
 ```yaml
 type: conditional
 conditions:
   - condition: state
-    entity: switch.salotto_tecnoalarm_tastiera_remota   # vedi nota qui sotto
+    entity: switch.salotto_tecnoalarm_tastiera_remota
     state: "on"
 card:
   type: custom:nexus-tecnoalarm-card

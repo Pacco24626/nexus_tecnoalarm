@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.8.2";
+const VERSIONE_SCHEDA = "2.9.0";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1001,6 +1001,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     this._disegnaTelecomandi(mappa);
     this._disegnaMemorie(mappa);
     this._disegnaRegistro();
+    this._disegnaTastiera(mappa);
     this._disegnaDispositivo(mappa);
   }
 
@@ -1132,6 +1133,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     card.appendChild(this._costruisciTelecomandi(mappa));
     card.appendChild(this._costruisciMemorie(mappa));
     card.appendChild(this._costruisciRegistro());
+    card.appendChild(this._costruisciTastiera());
     card.appendChild(this._costruisciDispositivo());
     card.appendChild(this._costruisciDialogo());
 
@@ -1334,6 +1336,74 @@ class NexusTecnoalarmAllarme extends HTMLElement {
    * disinserimento - perche' due dialoghi aperti insieme non devono poter
    * esistere, e con un velo solo e' impossibile per costruzione.
    */
+  /**
+   * La riga con cui si accende e si spegne la tastiera remota.
+   *
+   * L'interruttore c'e' dalla 2.8.0, ma stava solo nella pagina del
+   * dispositivo: chi nasconde la card della tastiera quando e' spenta non
+   * aveva piu' da nessuna parte il modo di riaccenderla. Qui sta accanto al
+   * resto dell'antifurto, che e' dove lo si va a cercare.
+   *
+   * Compare solo se la mappa dice qual e' l'interruttore: su un'integrazione
+   * piu' vecchia la riga non c'e' affatto, invece di comandare un'entita'
+   * indovinata dal nome.
+   */
+  _costruisciTastiera() {
+    const bottone = el("button", { type: "button", onclick: () => this._commutaTastiera() });
+    const stato = el("span", { classe: "spiega" });
+    const riga = el("div", { classe: "dispositivo" }, [
+      el("div", { classe: "testi" }, [
+        el("span", { classe: "nome", testo: "Tastiera remota" }),
+        stato,
+      ]),
+      bottone,
+    ]);
+    const sezione = el("section", { classe: "blocco", hidden: true }, [riga]);
+    this._el.tastiera = { sezione, riga, bottone, stato };
+    return sezione;
+  }
+
+  _disegnaTastiera(mappa) {
+    const voce = this._el && this._el.tastiera;
+    if (!voce) return;
+    const id = mappa.interruttore_tastiera;
+    const interruttore = id && this._hass.states[id];
+    if (!interruttore) {
+      voce.sezione.hidden = true;
+      return;
+    }
+    voce.sezione.hidden = false;
+
+    // «Non disponibile» non e' «spenta»: mentre l'integrazione si ricarica il
+    // pulsante non deve fingere di sapere da che parte sta l'interruttore.
+    if (assente(interruttore)) {
+      voce.riga.removeAttribute("data-attivo");
+      voce.bottone.disabled = true;
+      voce.bottone.textContent = "Accendi";
+      voce.stato.textContent = "Interruttore non disponibile.";
+      return;
+    }
+
+    const accesa = interruttore.state === "on";
+    voce.riga.toggleAttribute("data-attivo", accesa);
+    voce.bottone.disabled = false;
+    voce.bottone.textContent = accesa ? "Spegni" : "Accendi";
+    voce.stato.textContent = accesa
+      ? "Accesa: la tastiera della centrale si legge e si comanda da Home Assistant."
+      : "Spenta: il collegamento con la tastiera della centrale e' chiuso.";
+  }
+
+  /** Accende o spegne il collegamento alla tastiera remota. */
+  async _commutaTastiera() {
+    const id = this._mappa().interruttore_tastiera;
+    if (!id) return;
+    try {
+      await this._hass.callService("switch", "toggle", { entity_id: id });
+    } catch (errore) {
+      this._mostra(`Tastiera remota: ${testoErrore(errore)}`, "allarme");
+    }
+  }
+
   /**
    * La riga con cui questo dispositivo chiede il tastierino automatico.
    *

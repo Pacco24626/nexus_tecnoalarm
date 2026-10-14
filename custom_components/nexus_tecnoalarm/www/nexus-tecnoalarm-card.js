@@ -8,7 +8,7 @@
  *   0-9 cifre, 10 MEM, 11 EXIT, 12 giu', 13 su', 14 NO, 15 YES.
  */
 
-const VERSIONE_CARD = "2.8.2";
+const VERSIONE_CARD = "2.9.0";
 const BASE_RISORSE = "/nexus_tecnoalarm_local";
 
 /* I tasti nell'ordine dell'apparecchio: cifre a sinistra, comandi nella
@@ -197,6 +197,24 @@ function lampeggia(oggetto, chiave) {
   return Boolean(oggetto[`attr_${chiave}`] || oggetto[`${chiave}_attr`]);
 }
 
+/**
+ * L'interruttore della tastiera remota, come lo pubblica la mappa dell'allarme.
+ *
+ * Si legge di li' invece di ricostruire l'identificativo dal nome: il nome lo
+ * sceglie chi installa. Con due centrali si prende la prima mappa trovata:
+ * e' una configurazione di partenza che l'editor mostra e lascia correggere,
+ * non una scelta definitiva.
+ */
+function interruttoreTastiera(hass) {
+  for (const stato of Object.values(hass.states || {})) {
+    const attributi = stato.attributes || {};
+    if (attributi.ruolo === "mappa_allarme" && attributi.interruttore_tastiera) {
+      return attributi.interruttore_tastiera;
+    }
+  }
+  return null;
+}
+
 class NexusTecnoalarmCard extends HTMLElement {
   // ---------------------------------------------------------------------
   // Presenza: il gateway tiene agganciata la tastiera solo mentre riceve il
@@ -246,7 +264,19 @@ class NexusTecnoalarmCard extends HTMLElement {
         hass.states[id].attributes.programmi !== undefined &&
         hass.states[id].attributes.ruolo !== "mappa_allarme"
     );
-    return { entity: trovata || "sensor.nexus_tecnoalarm_keypad" };
+    const config = { entity: trovata || "sensor.nexus_tecnoalarm_keypad" };
+
+    // Nasce gia' nascosta a tastiera spenta. Spenta, questa card non puo' far
+    // niente: lasciarla li' a dire TASTIERA NON CONNESSA fa sembrare un guasto
+    // una scelta. La condizione resta nella scheda «Visibilita'» dell'editor,
+    // visibile e togliibile in un clic da chi non la vuole.
+    const interruttore = interruttoreTastiera(hass);
+    if (interruttore) {
+      config.visibility = [
+        { condition: "state", entity_id: interruttore, state: "on" },
+      ];
+    }
+    return config;
   }
 
   setConfig(config) {

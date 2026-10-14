@@ -11,7 +11,8 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import MATCH_ALL
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -22,6 +23,7 @@ from .const import (
     DEFAULT_TASTIERINO_PREALLARME,
     DOMAIN,
     KEY_MAPPA,
+    KEY_TASTIERA,
     LEGACY_SENSOR_NAME,
     LEGACY_SENSOR_UNIQUE_ID,
     MANUFACTURER,
@@ -90,6 +92,7 @@ class MappaAllarmeSensor(SensorEntity):
 
     def __init__(self, gateway: KeypadGateway) -> None:
         self._mappa: MappaAllarme | None = None
+        self._interruttore: str | None = None
         # La voce di configurazione serve per le opzioni del tastierino
         # automatico: cambiarle ricarica l'integrazione, quindi il sensore
         # rinasce e le rilegge da se'.
@@ -112,6 +115,18 @@ class MappaAllarmeSensor(SensorEntity):
         self.async_on_remove(self._mappa.async_add_listener(self.async_write_ha_state))
         self._mappa.async_start()
         self.async_on_remove(self._mappa.async_stop)
+
+        # L'interruttore della tastiera nasce con la sua piattaforma, che puo'
+        # essere pronta dopo di noi, e l'utente lo puo' rinominare quando vuole.
+        # La mappa si riscrive quando il suo identificativo compare o cambia:
+        # senza questo l'attributo arriverebbe solo al primo cambiamento vero
+        # dell'impianto, perche' nascere un interruttore la mappa non la tocca.
+        self._interruttore = self._cerca_interruttore()
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED, self._su_registro_interruttore
+            )
+        )
 
     @property
     def native_value(self) -> int | None:
@@ -139,6 +154,39 @@ class MappaAllarmeSensor(SensorEntity):
             ),
         }
 
+    def _cerca_interruttore(self) -> str | None:
+        """L'entity_id dell'interruttore della tastiera remota, dal registro.
+
+        Non lo decide l'integrazione: lo assegna Home Assistant e l'utente lo
+        puo' cambiare, quindi si chiede al registro invece di ricostruirlo
+        dall'unique_id.
+        """
+        if self.hass is None:
+            return None
+        return er.async_get(self.hass).async_get_entity_id(
+            "switch", DOMAIN, f"{self._entry.entry_id}_{KEY_TASTIERA}"
+        )
+
+    @callback
+    def _su_registro_interruttore(self, event: Event) -> None:
+        entita = event.data.get("entity_id") or ""
+        if not entita.startswith("switch.") and entita != (self._interruttore or ""):
+            return
+        trovato = self._cerca_interruttore()
+        if trovato != self._interruttore:
+            self._interruttore = trovato
+            self.async_write_ha_state()
+
+    @property
+    def _interruttori(self) -> dict[str, Any]:
+        """Dove sta l'interruttore della tastiera remota, per la scheda allarme.
+
+        Se non c'e' - entita' disabilitata, o registro non ancora pronto - la
+        chiave manca e la scheda non disegna la riga, invece di offrire un
+        pulsante che comanda un'entita' inventata.
+        """
+        return {"interruttore_tastiera": self._interruttore} if self._interruttore else {}
+
     @property
     def _gateway(self) -> dict[str, Any]:
         """Che cosa sa fare il gateway che abbiamo davanti.
@@ -159,11 +207,17 @@ class MappaAllarmeSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         if self._mappa is None:
-            return {"ruolo": RUOLO_MAPPA, **self._tastierino, **self._gateway}
+            return {
+                "ruolo": RUOLO_MAPPA,
+                **self._tastierino,
+                **self._gateway,
+                **self._interruttori,
+            }
         return {
             "ruolo": RUOLO_MAPPA,
             **self._mappa.mappa,
             "rifiuti": self._mappa.rifiuti,
             **self._tastierino,
             **self._gateway,
+            **self._interruttori,
         }
