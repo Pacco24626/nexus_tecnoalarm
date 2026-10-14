@@ -88,6 +88,10 @@
       ruolo: "mappa_allarme", dispositivo_trovato: true, programmi, zone, telecomandi,
       allarme_generale: "binary_sensor.allarme", rifiuti: {},
       ...(VECCHIO ? {} : { consenti_zone_aperte: "switch.consenti_zone_aperte" }),
+      // Dalla 2.9.0 la mappa dice qual e' l'interruttore della tastiera remota,
+      // e la scheda ci disegna sopra una riga. Con il gateway vecchio la chiave
+      // non c'e' e la riga nemmeno.
+      ...(VECCHIO ? {} : { interruttore_tastiera: "switch.tastiera_remota" }),
       ...(VECCHIO
         ? { azzera_memorie: null, memorie: null }
         : { azzera_memorie: "button.azzera_memorie", memorie: "binary_sensor.memorie" }),
@@ -97,6 +101,7 @@
       aggiornato: new Date(Date.now() - 4 * 60000).toISOString(),
     } },
     "binary_sensor.allarme": { entity_id: "binary_sensor.allarme", state: "off", last_updated: "1", attributes: {} },
+    "switch.tastiera_remota": { entity_id: "switch.tastiera_remota", state: "on", last_updated: "1", attributes: {} },
   };
   for (const p of programmi) {
     stati[p.entity_id] = { entity_id: p.entity_id, state: p.numero === 2 ? "armed_away" : "disarmed",
