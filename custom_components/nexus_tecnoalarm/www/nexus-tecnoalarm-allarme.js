@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.9.0";
+const VERSIONE_SCHEDA = "2.9.1";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1031,6 +1031,10 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       // L'elenco dei dispositivi abilitati vive negli attributi della mappa:
       // senza, revocare dalle opzioni non si vedrebbe fino al ricarico.
       (mappa.dispositivi_preallarme || []).join(","),
+      // L'interruttore della tastiera remota: la sua riga ha un pulsante che
+      // deve cambiare appena l'interruttore cambia, anche quando a spostarlo
+      // e' un'altra plancia o un'automazione.
+      mappa.interruttore_tastiera,
       ...(mappa.zone || []).map((z) => z.entity_id),
       ...(mappa.telecomandi || []).map((t) => t.entity_id),
     ];

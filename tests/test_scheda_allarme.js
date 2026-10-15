@@ -1653,6 +1653,21 @@ async function prove() {
       t.sezione.hidden === false && t.bottone.disabled === true
       && /non disponibile/.test(t.stato.textContent), t.stato.textContent);
   }
+  {
+    // Il difetto del 15/10. La scheda ridisegna solo quando cambia la FIRMA
+    // degli stati che guarda, e li' dentro l'interruttore non c'era: premendo
+    // il pulsante l'interruttore cambiava davvero, ma la riga restava indietro
+    // fino a quando non si usciva e si rientrava nella plancia.
+    const { scheda, casa, pubblica } = prepara({ tastiera: "off" });
+    verifica("prima: il pulsante dice Accendi",
+      scheda._el.tastiera.bottone.textContent === "Accendi");
+    casa.stati["switch.tecnoalarm_tastiera_remota"] = stato("switch.tecnoalarm_tastiera_remota", "on");
+    pubblica();
+    verifica("l'interruttore cambia: la riga si aggiorna senza uscire dalla plancia",
+      scheda._el.tastiera.bottone.textContent === "Spegni"
+      && scheda._el.tastiera.riga.hasAttribute("data-attivo"),
+      scheda._el.tastiera.bottone.textContent);
+  }
 }
 
 prove()
