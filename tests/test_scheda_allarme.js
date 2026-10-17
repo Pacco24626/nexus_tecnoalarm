@@ -1668,6 +1668,58 @@ async function prove() {
       && scheda._el.tastiera.riga.hasAttribute("data-attivo"),
       scheda._el.tastiera.bottone.textContent);
   }
+  {
+    // 21. Quello che porta il gateway 0.8.62: le entita' che l'impianto non ha
+    // vengono RITIRATE con una discovery vuota, e spariscono. Fra il ritiro e
+    // la mappa nuova c'e' una finestra in cui la mappa nomina ancora qualcosa
+    // che non esiste piu': li' la scheda deve dire «assente», non rompersi.
+    const { scheda, casa, pubblica } = prepara({ totale: "disarmed", notte: "armed_away" });
+    delete casa.stati[NOTTE.entity_id];
+    pubblica();
+    const voce = scheda._el.programmi.get(NOTTE.entity_id);
+    verifica("programma ritirato: la riga lo dice e la scheda resta in piedi",
+      scheda._el !== null && voce.riga.dataset.stato === "assente"
+      && scheda._el.programmi.get(TOTALE.entity_id).riga.dataset.stato === "disinserito",
+      voce.riga.dataset.stato);
+  }
+  {
+    // Un telecomando mai configurato su quell'impianto: tessera marcata e
+    // spenta, non un pulsante che manda comandi nel vuoto.
+    const { scheda, casa, pubblica } = prepara({});
+    delete casa.stati["switch.luce"];
+    pubblica();
+    const voce = scheda._el.telecomandi.get("switch.luce");
+    verifica("telecomando ritirato: tessera assente e non premibile",
+      voce.tessera.hasAttribute("data-assente") === true && voce.tessera.disabled === true);
+  }
+  {
+    // Una zona ritirata non e' una zona chiusa: resta a vista fra quelle da
+    // verificare, perche' non sapere com'e' e' gia' un motivo per guardarla.
+    const { scheda, casa, pubblica } = prepara({ porta: "off" });
+    delete casa.stati["binary_sensor.porta"];
+    pubblica();
+    const voce = scheda._el.zone.get("binary_sensor.porta");
+    verifica("zona ritirata: tessera assente, a vista anche col filtro, scheda viva",
+      scheda._el !== null && voce.tessera.hasAttribute("data-assente") === true
+      && voce.tessera.hidden === false);
+  }
+  {
+    // 22. Lo scavalco a «unknown»: con la 0.8.62 lo stato viene pubblicato
+    // senza retain, quindi dopo un riavvio di Home Assistant quell'interruttore
+    // puo' non avere valore. Non e' un guasto, e soprattutto non deve togliere
+    // la via d'uscita: la scheda guarda se la mappa DICHIARA l'interruttore,
+    // non che stato ha.
+    const { scheda, casa, pubblica } = prepara({
+      totale: "disarmed", notte: "armed_away", scavalco: true, gateway: rifiutaZone(905),
+    });
+    casa.stati["switch.consenti"] = stato("switch.consenti", "unknown");
+    pubblica();
+    scheda._el.programmi.get(TOTALE.entity_id).bottone.click();
+    await svuota();
+    await avanza(1500);
+    verifica("scavalco senza stato: il dialogo offre lo stesso «Inserisci comunque»",
+      Boolean(azioneDialogo(scheda, "Inserisci comunque")));
+  }
 }
 
 prove()
