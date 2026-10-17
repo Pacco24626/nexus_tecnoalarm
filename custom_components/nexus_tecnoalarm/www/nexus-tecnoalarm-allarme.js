@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.9.1";
+const VERSIONE_SCHEDA = "2.9.2";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1828,6 +1828,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
     let aperte = 0;
     let segnalate = 0;
     let visibili = 0;
+    let senzaLettura = 0;
 
     for (const zona of zone) {
       const voce = this._el.zone.get(zona.entity_id);
@@ -1838,6 +1839,7 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       voce.icona.stateObj = stato;
 
       const mancante = assente(stato);
+      if (mancante) senzaLettura += 1;
       const aperta = !mancante && stato.state === "on";
       const bandierine = mancante ? [] : bandierineDi(stato.attributes);
       const inAllarme = bandierine.some((b) => b.tono === "allarme");
@@ -1866,9 +1868,18 @@ class NexusTecnoalarmAllarme extends HTMLElement {
       if (mostrata) visibili += 1;
     }
 
+    // «Tutte chiuse» si puo' dire solo di cio' che si e' letto. Con il gateway
+    // giu' le zone non sono chiuse: non si sa come sono, e dirlo chiuso e' la
+    // frase che fa chiudere la pagina senza controllare. Le tessere lo dicevano
+    // gia' («assente»), la riga sopra le smentiva.
+    const lette = zone.length - senzaLettura;
     const conto = aperte
       ? `${aperte} aperte su ${zone.length}`
-      : `tutte chiuse · ${zone.length}`;
+      : senzaLettura === zone.length && zone.length
+        ? `nessuna lettura · ${zone.length}`
+        : senzaLettura
+          ? `${lette} chiuse su ${zone.length}`
+          : `tutte chiuse · ${zone.length}`;
     // La riga del conteggio non deve smentire le tessere: con tutto chiuso e
     // una zona esclusa a schermo, il solo «tutte chiuse» farebbe chiedere
     // perche' quella tessera sta li'.

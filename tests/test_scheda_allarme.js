@@ -1654,6 +1654,74 @@ async function prove() {
       && /non disponibile/.test(t.stato.textContent), t.stato.textContent);
   }
   {
+    // 23. I due versi della disponibilita'.
+    //
+    // Il gateway non dichiara nessun testamento MQTT (misurato dalla sessione
+    // del gateway il 17/10): se muore, Home Assistant tiene l'ULTIMO valore e
+    // il pannello continua a dire «tutte chiuse». Lo stanno aggiungendo. Queste
+    // prove stanno dall'altra parte del filo: loro provano che il gateway
+    // pubblica la disponibilita' giusta, qui si prova che la scheda la legge
+    // come ci aspettiamo - nei DUE versi, perche' il modo di sbagliare non e'
+    // «non funziona», e' «l'argomento e' storto e tutto risulta assente».
+    const { scheda } = prepara({ totale: "disarmed", notte: "armed_away", porta: "off" });
+    const programmi = [...scheda._el.programmi.values()];
+    const zone = [...scheda._el.zone.values()];
+    const telecomandi = [...scheda._el.telecomandi.values()];
+    verifica("gateway vivo: nessun programma, zona o telecomando risulta assente",
+      programmi.every((v) => v.riga.dataset.stato !== "assente")
+      && zone.every((v) => v.tessera.hasAttribute("data-assente") === false)
+      && telecomandi.every((v) => v.tessera.hasAttribute("data-assente") === false));
+  }
+  {
+    // Gateway giu' con il testamento pubblicato: ogni entita' della centrale
+    // diventa «non disponibile» in un colpo solo.
+    const { scheda, casa, pubblica } = prepara({ totale: "disarmed", notte: "armed_away", porta: "off" });
+    for (const id of [TOTALE.entity_id, NOTTE.entity_id, "binary_sensor.porta",
+                      "binary_sensor.finestra", "switch.luce", "binary_sensor.allarme"]) {
+      casa.stati[id] = stato(id, "unavailable", casa.stati[id].attributes);
+    }
+    pubblica();
+    verifica("gateway giu': la scheda resta in piedi", scheda._el !== null);
+    const programmi = [...scheda._el.programmi.values()];
+    const zone = [...scheda._el.zone.values()];
+    verifica("gateway giu': ogni programma dice «assente»",
+      programmi.length === 2 && programmi.every((v) => v.riga.dataset.stato === "assente"));
+    verifica("gateway giu': ogni zona e' marcata assente e resta A VISTA",
+      zone.length === 2
+      && zone.every((v) => v.tessera.hasAttribute("data-assente") && v.tessera.hidden === false),
+      zone.map((v) => v.tessera.hidden).join(","));
+    verifica("gateway giu': i telecomandi non si possono premere",
+      [...scheda._el.telecomandi.values()].every((v) => v.tessera.disabled === true));
+
+    // La riga di riepilogo non deve dire quello che non sa: senza letture
+    // «tutte chiuse» e' una bugia, ed e' la frase che fa chiudere la pagina
+    // senza controllare.
+    const conteggio = scheda._el.conteggioZone.textContent;
+    verifica("gateway giu': il riepilogo non dice «tutte chiuse»",
+      !/tutte chiuse/.test(conteggio), conteggio);
+    verifica("gateway giu': il riepilogo dice che non ha letto niente",
+      /nessuna lettura/.test(conteggio), conteggio);
+  }
+  {
+    // Il verso intermedio, che e' quello che si vede davvero quando il gateway
+    // ritira una zona sola: le altre si leggono, quella no, e la riga non deve
+    // spacciare per chiuse sedici zone quando ne ha lette quindici.
+    const { scheda, casa, pubblica } = prepara({ porta: "off" });
+    casa.stati["binary_sensor.finestra"] = stato("binary_sensor.finestra", "unavailable",
+      casa.stati["binary_sensor.finestra"].attributes);
+    pubblica();
+    const conteggio = scheda._el.conteggioZone.textContent;
+    verifica("una zona non letta: il riepilogo conta solo quelle lette",
+      /^1 chiuse su 2/.test(conteggio), conteggio);
+  }
+  {
+    // Controllo di sanita': con tutte lette e chiuse la frase di sempre resta.
+    const { scheda } = prepara({ porta: "off" });
+    verifica("tutte lette e chiuse: il riepilogo dice ancora «tutte chiuse»",
+      /tutte chiuse/.test(scheda._el.conteggioZone.textContent),
+      scheda._el.conteggioZone.textContent);
+  }
+  {
     // Il difetto del 15/10. La scheda ridisegna solo quando cambia la FIRMA
     // degli stati che guarda, e li' dentro l'interruttore non c'era: premendo
     // il pulsante l'interruttore cambiava davvero, ma la riga restava indietro
