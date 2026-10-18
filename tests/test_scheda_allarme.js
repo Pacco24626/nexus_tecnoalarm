@@ -1600,6 +1600,33 @@ async function prove() {
   {
     // Mai vista: e' un'entita' sbagliata nello YAML, e chi la sta scrivendo
     // deve vederlo subito, non dopo un minuto e mezzo.
+    // 24. L'impianto che cresce: una zona programmata in centrale arriva nella
+    // mappa, e la scheda deve rifare le tessere da sola. E' la promessa del
+    // README («una zona aggiunta compare da sola, una tolta sparisce») e sta in
+    // piedi sulla firma della struttura: senza una prova, una modifica
+    // distratta a quella firma la toglierebbe in silenzio.
+    const { scheda, casa, pubblica } = prepara({});
+    const primeZone = scheda._el.zone.size;
+    const primiProgrammi = scheda._el.programmi.size;
+    const NUOVA = "binary_sensor.finestra_studio";
+    casa.stati[NUOVA] = stato(NUOVA, "off", { device_class: "window" });
+    const mappaVecchia = casa.stati[MAPPA];
+    casa.stati[MAPPA] = stato(MAPPA, mappaVecchia.state, {
+      ...mappaVecchia.attributes,
+      zone: [...mappaVecchia.attributes.zone,
+             { numero: 3, entity_id: NUOVA, nome: "Finestra studio", area: "Studio", piano: "Primo piano" }],
+    });
+    pubblica();
+    verifica("una zona aggiunta compare da sola, senza toccare la plancia",
+      scheda._el.zone.size === primeZone + 1 && scheda._el.zone.has(NUOVA)
+      && scheda._el.programmi.size === primiProgrammi,
+      `zone ${primeZone} -> ${scheda._el.zone.size}`);
+    verifica("e la zona nuova si disegna con il suo nome",
+      Boolean(scheda._el.zone.get(NUOVA))
+      && /Finestra studio/.test(scheda._el.zone.get(NUOVA).tessera.textContent),
+      scheda._el.zone.get(NUOVA) ? scheda._el.zone.get(NUOVA).tessera.textContent.slice(0, 60) : "assente");
+  }
+  {
     const { scheda } = prepara({ config: { entity: "sensor.non_esiste_proprio" } });
     verifica("entita' mai vista: avviso subito, senza aspettare",
       scheda._el === null
