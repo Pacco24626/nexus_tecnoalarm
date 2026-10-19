@@ -75,6 +75,28 @@ class Candidato:
     domini: frozenset[str]
 
 
+def domini_di(dispositivo, risolvi_voce) -> frozenset[str]:
+    """I domini a cui appartiene un dispositivo del registro.
+
+    `DeviceEntry.config_entries` e' deprecata - un dispositivo appartiene a una
+    voce sola - e il solo accesso fa scattare l'avviso nel registro. Si legge
+    quindi `primary_config_entry`, e si ricade sulla vecchia lista soltanto
+    dove quell'attributo non esiste ancora (Home Assistant piu' vecchi).
+
+    `risolvi_voce` prende un identificativo di voce e torna la voce, o None.
+    """
+    principale = getattr(dispositivo, "primary_config_entry", None)
+    if principale is not None:
+        identificativi = [principale]
+    else:
+        identificativi = list(getattr(dispositivo, "config_entries", ()) or ())
+    return frozenset(
+        voce.domain
+        for voce_id in identificativi
+        if (voce := risolvi_voce(voce_id)) is not None
+    )
+
+
 def scegli_centrale(candidati: Iterable[Candidato]) -> str | None:
     """L'id del dispositivo della centrale fra quelli con lo stesso identificativo.
 

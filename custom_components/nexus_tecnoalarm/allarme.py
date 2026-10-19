@@ -36,6 +36,7 @@ from .mappa import (
     Voce,
     classifica,
     con_rifiuto,
+    domini_di,
     mappa_vuota,
     numero_da_topic,
     pulisci_rifiuto,
@@ -149,11 +150,7 @@ class MappaAllarme:
         candidati = [
             Candidato(
                 id=dispositivo.id,
-                domini=frozenset(
-                    voce.domain
-                    for voce_id in dispositivo.config_entries
-                    if (voce := self.hass.config_entries.async_get_entry(voce_id)) is not None
-                ),
+                domini=domini_di(dispositivo, self.hass.config_entries.async_get_entry),
             )
             for dispositivo in trovati
         ]

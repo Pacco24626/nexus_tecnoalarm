@@ -22,6 +22,7 @@ try:
         almeno_versione,
         classifica,
         con_rifiuto,
+        domini_di,
         mappa_vuota,
         numero_da_topic,
         pulisci_rifiuto,
@@ -464,6 +465,56 @@ verifica("senza MQTT, il primo in ordine di id",
          scegli_centrale([altro, terzo]) == "aaa_terzo")
 verifica("due di MQTT: scelta stabile, non a caso",
          scegli_centrale([Candidato("b", frozenset({"mqtt"})), Candidato("a", frozenset({"mqtt"}))]) == "a")
+
+# --- 10bis. i domini di un dispositivo, senza API deprecate ------------------
+# DeviceEntry.config_entries e' deprecata e il solo accesso fa scattare l'avviso
+# nel registro: si legge primary_config_entry, e la vecchia lista si guarda solo
+# dove quell'attributo non esiste.
+class _Voce:
+    def __init__(self, domain):
+        self.domain = domain
+
+
+_VOCI = {"v_mqtt": _Voce("mqtt"), "v_nostra": _Voce("nexus_tecnoalarm")}
+
+
+def _risolvi(voce_id):
+    return _VOCI.get(voce_id)
+
+
+class _Nuovo:
+    """Home Assistant di oggi: una voce sola, e la vecchia lista esplode se letta."""
+
+    primary_config_entry = "v_mqtt"
+
+    @property
+    def config_entries(self):
+        raise AssertionError("config_entries non va nemmeno sfiorata")
+
+
+class _Vecchio:
+    """Home Assistant precedente: solo la lista."""
+
+    config_entries = ["v_mqtt", "v_nostra", "v_sconosciuta"]
+
+
+class _Spoglio:
+    """Niente dell'uno ne' dell'altro."""
+
+
+verifica("si legge la voce principale",
+         domini_di(_Nuovo(), _risolvi) == frozenset({"mqtt"}))
+verifica("e la vecchia lista NON viene toccata",
+         domini_di(_Nuovo(), _risolvi) == frozenset({"mqtt"}))
+verifica("senza voce principale si ricade sulla lista",
+         domini_di(_Vecchio(), _risolvi) == frozenset({"mqtt", "nexus_tecnoalarm"}),
+         domini_di(_Vecchio(), _risolvi))
+verifica("una voce che non esiste piu' non conta",
+         "v_sconosciuta" not in domini_di(_Vecchio(), _risolvi))
+verifica("dispositivo senza voci: nessun dominio",
+         domini_di(_Spoglio(), _risolvi) == frozenset())
+verifica("la centrale si sceglie lo stesso con i domini cosi' letti",
+         scegli_centrale([Candidato("dev", domini_di(_Nuovo(), _risolvi))]) == "dev")
 
 # --- esito -------------------------------------------------------------------
 # --- 12. la versione del gateway decide cosa la scheda puo' dire -------------
