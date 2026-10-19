@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import urlsplit
 
 import voluptuous as vol
 from homeassistant.components.frontend import add_extra_js_url
@@ -21,6 +22,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.loader import async_get_integration
 
 from .const import (
@@ -178,6 +180,11 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     _LOGGER.debug("Card registrate: %s", ", ".join(urls.values()))
 
 
+def _percorso(risorsa: dict) -> str:
+    """Il percorso dell'URL di una risorsa, senza la versione in coda."""
+    return urlsplit(risorsa.get("url") or "").path
+
+
 async def _async_registra_risorsa(hass: HomeAssistant, nome_file: str, url: str) -> None:
     """Registra la card come risorsa Lovelace.
 
@@ -200,10 +207,25 @@ async def _async_registra_risorsa(hass: HomeAssistant, nome_file: str, url: str)
 
     try:
         await resources.async_get_info()
-        esistente = next(
-            (r for r in resources.async_items() if nome_file in r.get("url", "")),
-            None,
-        )
+        # Si riconosce SOLO la propria risorsa, confrontando il percorso intero
+        # senza la versione in coda. Il confronto per sottostringa prendeva anche
+        # una risorsa /local/ o /hacsfiles/ aggiunta a mano dall'utente e la
+        # riscriveva, puntandola altrove.
+        percorso_mio = f"{CARD_URL_BASE}/{nome_file}"
+        voci = list(resources.async_items())
+        esistente = next((r for r in voci if _percorso(r) == percorso_mio), None)
+        altrove = [
+            r.get("url")
+            for r in voci
+            if _percorso(r) != percorso_mio and _percorso(r).endswith(f"/{nome_file}")
+        ]
+        if altrove:
+            _LOGGER.warning(
+                "Un'altra risorsa Lovelace serve lo stesso file (%s): non la tocco, "
+                "ma finche' resta la scheda viene caricata due volte. Toglila dalle "
+                "risorse della plancia.",
+                ", ".join(a for a in altrove if a),
+            )
         if esistente is None:
             await resources.async_create_item({"res_type": "module", "url": url})
             _LOGGER.info("Risorsa Lovelace della card creata: %s", url)
@@ -301,11 +323,15 @@ def _async_register_services(hass: HomeAssistant) -> None:
         _scrivi_dispositivi(call, senza_dispositivo(attuale, call.data[ATTR_DISPOSITIVO_ID]))
 
     hass.services.async_register(DOMAIN, SERVICE_SEND_KEY, handle_send_key, SEND_KEY_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_REGISTRA_DISPOSITIVO, handle_registra, REGISTRA_SCHEMA
+    # Abilitare o revocare un tablet scrive le opzioni della voce e fa ricaricare
+    # l'integrazione: e' un atto di configurazione, non d'uso quotidiano, e lo fa
+    # un amministratore. Prima li poteva chiamare qualunque utente connesso, che
+    # poteva cosi' revocare tutti i tablet o tenere l'integrazione in ricarica.
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_REGISTRA_DISPOSITIVO, handle_registra, REGISTRA_SCHEMA
     )
-    hass.services.async_register(
-        DOMAIN, SERVICE_DIMENTICA_DISPOSITIVO, handle_dimentica, DIMENTICA_SCHEMA
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_DIMENTICA_DISPOSITIVO, handle_dimentica, DIMENTICA_SCHEMA
     )
     hass.services.async_register(
         DOMAIN, SERVICE_KEYPAD_PRESENCE, handle_presence, PRESENCE_SCHEMA

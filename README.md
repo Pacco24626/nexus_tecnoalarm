@@ -63,6 +63,10 @@ Tre passaggi, una volta sola:
 2. **Non toccare la risorsa Lovelace.** Dalla 2.0.2 la gestisce l'integrazione: se ne
    trova già una la aggiorna all'URL della versione installata, altrimenti la crea. Gli
    aggiornamenti non richiedono più di svuotare la cache né il trucco del `?v=`.
+   Dalla 2.10.0 l'integrazione riconosce **solo la propria** risorsa, confrontando il
+   percorso intero: una copia della scheda che avessi aggiunto a mano sotto `/local/` o
+   `/hacsfiles/` non viene più riscritta, ma segnalata nel registro — finché resta, il
+   file viene caricato due volte e va tolta dalle risorse della plancia.
 
 3. **Aggiungi l'integrazione** e inserisci host, porta e token.
 
@@ -688,6 +692,22 @@ tasti funzione. Con più gateway configurati si aggiunge `entry_id`.
 
 `nexus_tecnoalarm.keypad_presence` — battito di presenza, chiamato dalla card. Non serve
 invocarlo a mano.
+
+`nexus_tecnoalarm.registra_dispositivo` e `nexus_tecnoalarm.dimentica_dispositivo` —
+abilitano o revocano il tastierino automatico su un singolo dispositivo. Li chiama la
+scheda allarme quando premi «Abilita», e **dalla 2.10.0 sono riservati agli
+amministratori**: scrivono la configurazione dell'impianto e fanno ricaricare
+l'integrazione, quindi non sono comandi d'uso quotidiano. Su un dispositivo collegato
+con un utente normale la scheda lo dice, invece di far fallire la chiamata.
+
+## Cosa cambia nella 2.10.0
+
+- `registra_dispositivo` e `dimentica_dispositivo` **riservati agli amministratori**:
+  prima li poteva chiamare qualunque utente connesso, che poteva così revocare tutti i
+  dispositivi o tenere l'integrazione in ricarica continua
+- la risorsa Lovelace si riconosce dal **percorso intero** e non più per sottostringa:
+  una risorsa omonima aggiunta a mano dall'utente non viene più riscritta
+- la scheda avvisa chi non è amministratore invece di lasciar fallire il comando
 
 ## Cosa cambia nella 2.0.0
 

@@ -237,7 +237,7 @@ function statoMappa(rifiuti = {}) {
 
 /** Una prova: una scheda nuova, uno stato iniziale, un gateway finto. */
 function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, porta = "off", allarme = "off", gateway, registro, memorie, spie, scavalco, esclusaPorta = false, config, zoneSenzaArea: senzaArea = false, tastierino, tastiera,
-  gatewayVecchio = false }) {
+  gatewayVecchio = false, amministratore = true }) {
   timer.length = 0;
   memorieNellaMappa = memorie !== undefined;
   spieNellaMappa = spie || {};
@@ -313,6 +313,9 @@ function prepara({ totale = "armed_away", notte = "disarmed", rifiuti = {}, port
     scheda.hass = {
       states: { ...casa.stati },
       formatEntityState: (s) => s.state,
+      // Chi guarda la plancia: dalla 2.10.0 abilitare un dispositivo e'
+      // riservato agli amministratori, e la scheda lo chiede a hass.user.
+      user: { name: "Prova", is_admin: amministratore },
       callService: async (dominio, servizio, dati, bersaglio) => {
         // Il bersaglio conta: i pulsanti ricevono l'entita' li', non nei dati.
         chiamate.push({ dominio, servizio, dati, bersaglio });
@@ -1415,6 +1418,26 @@ async function prove() {
       d.bottone.textContent);
     verifica("non abilitato qui: lo dice chiaro",
       /Non abilitato su questo dispositivo/.test(d.stato.textContent), d.stato.textContent);
+  }
+  {
+    // Utente senza diritti: la scheda lo dice, invece di mandare una chiamata
+    // destinata a tornare indietro con un errore di autorizzazione. Il
+    // controllo sta in cima a _commutaDispositivo, quindi vale anche per la
+    // disabilitazione.
+    const { scheda, chiamate } = prepara({
+      tastierino: { tastierino_preallarme: true, dispositivi_preallarme: [] },
+      amministratore: false,
+    });
+    scheda._el.dispositivo.bottone.click();
+    verifica("non amministratore: nessun comando parte",
+      chiamate.length === 0, String(chiamate.length));
+    verifica("non amministratore: la scheda spiega perche'",
+      scheda._el.velo.hidden === false
+      && /amministratore/i.test(scheda._el.velo.textContent),
+      scheda._el.velo.textContent.slice(0, 120));
+    const campi = scheda._el.dialogo.corpo.tutti().filter((n) => n.className === "campo-nome");
+    verifica("non amministratore: non chiede nemmeno il nome",
+      campi.length === 0, String(campi.length));
   }
   {
     // Si accende: prima la domanda con il nome, poi il servizio.

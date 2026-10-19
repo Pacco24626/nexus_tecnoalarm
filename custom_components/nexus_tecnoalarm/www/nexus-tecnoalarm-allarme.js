@@ -12,7 +12,7 @@
  * invece di restare ad aspettare un cambio di stato che non arrivera'.
  */
 
-const VERSIONE_SCHEDA = "2.9.2";
+const VERSIONE_SCHEDA = "2.10.0";
 
 // Quanto aspettare l'esito di un disinserimento prima di dire che la centrale
 // non risponde. Il comando passa dalla coda del gateway e dal polling della
@@ -1461,8 +1461,31 @@ class NexusTecnoalarmAllarme extends HTMLElement {
         : "Non abilitato su questo dispositivo.";
   }
 
+  /** Vero se chi sta guardando la plancia e' un amministratore. */
+  _amministratore() {
+    return !!(this._hass && this._hass.user && this._hass.user.is_admin);
+  }
+
   /** Accende o spegne il tastierino automatico su QUESTO dispositivo. */
   _commutaDispositivo() {
+    // Abilitare o revocare un dispositivo scrive la configurazione dell'impianto
+    // e fa ricaricare l'integrazione: dalla 2.10.0 il servizio e' riservato agli
+    // amministratori. Meglio dirlo prima, che lasciar partire una chiamata
+    // destinata a tornare indietro con un errore di autorizzazione.
+    if (!this._amministratore()) {
+      this._apriDialogo({
+        titolo: "Serve un amministratore",
+        corpo: [
+          el("p", { testo: "Abilitare o disabilitare il tastierino automatico su un dispositivo e' un'impostazione dell'impianto: puo' cambiarla solo un utente amministratore di Home Assistant." }),
+          el("p", { testo: "Chiedi a chi amministra l'impianto di farlo da questo dispositivo." }),
+        ],
+        azioni: [
+          { etichetta: "Ho capito", classe: "annulla", onclick: () => this._chiudiDialogo() },
+        ],
+      });
+      return;
+    }
+
     const mappa = this._mappa();
     if (abilitatoQui(mappa)) {
       const identita = identitaDispositivo();
