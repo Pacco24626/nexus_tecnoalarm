@@ -78,18 +78,23 @@ class Candidato:
 def domini_di(dispositivo, risolvi_voce) -> frozenset[str]:
     """I domini a cui appartiene un dispositivo del registro.
 
-    `DeviceEntry.config_entries` e' deprecata - un dispositivo appartiene a una
-    voce sola - e il solo accesso fa scattare l'avviso nel registro. Si legge
-    quindi `primary_config_entry`, e si ricade sulla vecchia lista soltanto
-    dove quell'attributo non esiste ancora (Home Assistant piu' vecchi).
+    Un dispositivo appartiene a UNA voce sola, in `config_entry_id`.
+    `config_entries`, `primary_config_entry` e `config_entries_subentries` sono
+    tre gusci deprecati (spariscono in Home Assistant 2027.10) e **il solo
+    accesso** fa scattare l'avviso nel registro: si leggono quindi soltanto
+    dove `config_entry_id` non c'e' - Home Assistant piu' vecchi - o dove e'
+    vuoto, cioe' sui dispositivi compositi, dove quei gusci non protestano.
 
     `risolvi_voce` prende un identificativo di voce e torna la voce, o None.
     """
-    principale = getattr(dispositivo, "primary_config_entry", None)
-    if principale is not None:
+    principale = getattr(dispositivo, "config_entry_id", None)
+    if principale:
         identificativi = [principale]
     else:
-        identificativi = list(getattr(dispositivo, "config_entries", ()) or ())
+        vecchio = getattr(dispositivo, "primary_config_entry", None)
+        identificativi = (
+            [vecchio] if vecchio else list(getattr(dispositivo, "config_entries", ()) or ())
+        )
     return frozenset(
         voce.domain
         for voce_id in identificativi

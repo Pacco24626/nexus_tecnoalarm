@@ -483,13 +483,27 @@ def _risolvi(voce_id):
 
 
 class _Nuovo:
-    """Home Assistant di oggi: una voce sola, e la vecchia lista esplode se letta."""
+    """Home Assistant di oggi: una voce sola, e i gusci deprecati esplodono."""
+
+    config_entry_id = "v_mqtt"
+
+    @property
+    def primary_config_entry(self):
+        raise AssertionError("primary_config_entry e' deprecata: non va sfiorata")
+
+    @property
+    def config_entries(self):
+        raise AssertionError("config_entries e' deprecata: non va sfiorata")
+
+
+class _Transizione:
+    """Home Assistant di mezzo: niente config_entry_id, ma la voce principale c'e'."""
 
     primary_config_entry = "v_mqtt"
 
     @property
     def config_entries(self):
-        raise AssertionError("config_entries non va nemmeno sfiorata")
+        raise AssertionError("con la voce principale, la lista non serve")
 
 
 class _Vecchio:
@@ -499,14 +513,16 @@ class _Vecchio:
 
 
 class _Spoglio:
-    """Niente dell'uno ne' dell'altro."""
+    """Niente di niente."""
 
 
-verifica("si legge la voce principale",
+verifica("si legge config_entry_id",
          domini_di(_Nuovo(), _risolvi) == frozenset({"mqtt"}))
-verifica("e la vecchia lista NON viene toccata",
+verifica("i gusci deprecati NON vengono sfiorati",
          domini_di(_Nuovo(), _risolvi) == frozenset({"mqtt"}))
-verifica("senza voce principale si ricade sulla lista",
+verifica("senza config_entry_id si usa la voce principale",
+         domini_di(_Transizione(), _risolvi) == frozenset({"mqtt"}))
+verifica("senza nessuna delle due si ricade sulla lista",
          domini_di(_Vecchio(), _risolvi) == frozenset({"mqtt", "nexus_tecnoalarm"}),
          domini_di(_Vecchio(), _risolvi))
 verifica("una voce che non esiste piu' non conta",
